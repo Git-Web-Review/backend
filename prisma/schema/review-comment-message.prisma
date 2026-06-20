@@ -1,0 +1,13 @@
+model ReviewCommentMessage {
+    id        String        @id @default(uuid())
+    commentId String        @map("comment_id")
+    comment   ReviewComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+    fromId    String        @map("from_id")
+    from      User          @relation("comment_from", fields: [fromId], references: [id])
+    toId      String?       @map("to_id")
+    to        User?         @relation("comment_to", fields: [toId], references: [id])
+    message   String
+    createdAt DateTime      @default(now()) @map("created_at")
+
+    @@map("review_comment_messages")
+}

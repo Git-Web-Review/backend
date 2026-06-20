@@ -1,0 +1,19 @@
+model ReviewComment {
+    id         String    @id @default(uuid())
+    reviewId   String    @map("review_id")
+    review     Review    @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+    commitHash String?   @map("commit_hash")
+    filePath   String?   @map("file_path")
+    lineNumber Int       @map("line_number")
+    done       Boolean   @default(false)
+    doneById   String?   @map("done_by_id")
+    doneBy     User?     @relation("comment_done_by", fields: [doneById], references: [id])
+    doneAt     DateTime? @map("done_at")
+    createdAt  DateTime  @default(now()) @map("created_at")
+    updatedAt  DateTime  @updatedAt @map("updated_at")
+
+    messages ReviewCommentMessage[]
+
+    @@index([reviewId, commitHash, filePath, lineNumber])
+    @@map("review_comments")
+}

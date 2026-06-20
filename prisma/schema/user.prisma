@@ -1,0 +1,20 @@
+model User {
+    id          String   @id @default(uuid())
+    firebaseUid String   @unique @map("firebase_uid")
+    email       String   @unique
+    hostname    String
+    role        UserRole @default(USER)
+    createdAt   DateTime @default(now()) @map("created_at")
+    updatedAt   DateTime @updatedAt @map("updated_at")
+
+    settings         UserSettings?
+    profileImage     UserProfileImage?
+    notifications    Notification[]
+    ownedReviews     Review[]               @relation("review_owner")
+    reviewRequests   ReviewReviewer[]
+    commentsSent     ReviewCommentMessage[] @relation("comment_from")
+    commentsReceived ReviewCommentMessage[] @relation("comment_to")
+    commentsDone     ReviewComment[]        @relation("comment_done_by")
+
+    @@map("users")
+}

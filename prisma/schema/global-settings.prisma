@@ -1,0 +1,8 @@
+model GlobalSettings {
+    id                  String   @id @default("global")
+    allowedOAuthDomains String[] @default([]) @map("allowed_oauth_domains")
+    createdAt           DateTime @default(now()) @map("created_at")
+    updatedAt           DateTime @updatedAt @map("updated_at")
+
+    @@map("global_settings")
+}

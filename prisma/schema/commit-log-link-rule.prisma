@@ -1,0 +1,11 @@
+model CommitLogLinkRule {
+    id           String   @id @default(uuid())
+    label        String?
+    regex        String
+    linkTemplate String   @map("link_template")
+    enabled      Boolean  @default(true)
+    createdAt    DateTime @default(now()) @map("created_at")
+    updatedAt    DateTime @updatedAt @map("updated_at")
+
+    @@map("commit_log_link_rules")
+}

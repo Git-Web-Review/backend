@@ -1,0 +1,27 @@
+model Review {
+  id               String       @id @default(uuid())
+  gitwebUrl        String       @map("gitweb_url")
+  title            String?
+  description      String?
+  status           ReviewStatus @default(PENDING)
+  ownerId          String       @map("owner_id")
+  owner            User         @relation("review_owner", fields: [ownerId], references: [id])
+  sourceProject    String?      @map("source_project")
+  sourceBranch     String?      @map("source_branch")
+  sourceCommit     String?      @map("source_commit")
+  gitwebTitle      String?      @map("gitweb_title")
+  gitwebLog        String?      @map("gitweb_log")
+  gitwebRawHtml    String?      @map("gitweb_raw_html")
+  gitwebSnapshot   Json?        @map("gitweb_snapshot")
+  gitwebFetchedAt  DateTime?    @map("gitweb_fetched_at")
+  gitwebFetchError String?      @map("gitweb_fetch_error")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  commits   ReviewCommit[]
+  reviewers ReviewReviewer[]
+  comments  ReviewComment[]
+
+  @@index([status, updatedAt])
+  @@map("reviews")
+}

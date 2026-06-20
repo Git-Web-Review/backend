@@ -1,0 +1,12 @@
+model ReviewReviewer {
+    id             String    @id @default(uuid())
+    reviewId       String    @map("review_id")
+    review         Review    @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+    userId         String    @map("user_id")
+    user           User      @relation(fields: [userId], references: [id])
+    requestedAt    DateTime  @default(now()) @map("requested_at")
+    acknowledgedAt DateTime? @map("acknowledged_at")
+
+    @@unique([reviewId, userId])
+    @@map("review_reviewers")
+}

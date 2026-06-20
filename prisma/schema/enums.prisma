@@ -1,0 +1,24 @@
+enum UserRole {
+    USER
+    ADMIN
+}
+
+enum UserLocale {
+    FR
+    EN
+}
+
+enum NotificationType {
+    TEXT
+    REVIEW_PENDING
+    REVIEW_STATUS_CHANGED
+    COMMENT_RECEIVED
+}
+
+enum ReviewStatus {
+    PENDING
+    IN_REVIEW
+    APPROVED
+    CHANGES_REQUESTED
+    CLOSED
+}

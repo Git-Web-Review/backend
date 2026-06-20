@@ -1,0 +1,13 @@
+model UserProfileImage {
+    userId String @id @map("user_id")
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    mimeType  String @map("mime_type")
+    sizeBytes Int    @map("size_bytes")
+    data      Bytes
+
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    @@map("user_profile_images")
+}

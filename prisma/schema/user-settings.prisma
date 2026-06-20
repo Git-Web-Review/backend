@@ -1,0 +1,13 @@
+model UserSettings {
+    userId String @id @map("user_id")
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    nickname                 String?
+    profileImageUrl          String?    @map("profile_image_url")
+    locale                   UserLocale @default(FR)
+    mailNotificationsEnabled Boolean    @default(false) @map("mail_notifications_enabled")
+    ircNotificationsEnabled  Boolean    @default(false) @map("irc_notifications_enabled")
+    ircNickname              String?    @map("irc_nickname")
+
+    @@map("user_settings")
+}
