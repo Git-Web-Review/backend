@@ -34,11 +34,14 @@ GOOGLE_APPLICATION_CREDENTIALS=./firebase-service-account.json
 ADMINS=admin@company.tld,review-admin@company.tld
 PROFILE_IMAGE_MAX_BYTES=1048576
 FRONTEND_ORIGIN=http://localhost:5173
+BACKEND_ALLOWED_HOSTS=localhost,127.0.0.1
 ```
 
 `ADMINS` is a comma-separated list seeded at startup into the admin grants table. If a user already exists, their role is promoted to `ADMIN`; otherwise the role is applied automatically on their first Firebase login.
 
 Profile images are stored in PostgreSQL. `PROFILE_IMAGE_MAX_BYTES` controls the maximum accepted upload size.
+
+`FRONTEND_ORIGIN` configures CORS. `BACKEND_ALLOWED_HOSTS` optionally restricts accepted HTTP `Host` headers; leave it empty to disable backend host filtering. Values are comma-separated, and `*` allows every host.
 
 OAuth domains are managed by admins through `PATCH /v1/admin/settings`. When no domain is configured, all authenticated Firebase emails are accepted, which is convenient for local development.
 
