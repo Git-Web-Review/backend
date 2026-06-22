@@ -14,5 +14,11 @@ export class ReviewUserSummaryResponseDto {
   nickname!: string | null;
 
   @ApiProperty()
+  mailNotificationsEnabled!: boolean;
+
+  @ApiProperty()
+  ircNotificationsEnabled!: boolean;
+
+  @ApiProperty()
   hasProfileImage!: boolean;
 }

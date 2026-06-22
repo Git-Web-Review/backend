@@ -1,9 +1,7 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { ReviewStatus } from "@prisma/client";
 import {
   ArrayUnique,
   IsArray,
-  IsEnum,
   IsOptional,
   IsString,
   IsUUID,
@@ -30,11 +28,6 @@ export class UpdateReviewDto {
   @IsString()
   @MaxLength(4000)
   description?: string | null;
-
-  @ApiPropertyOptional({ enum: ReviewStatus })
-  @IsOptional()
-  @IsEnum(ReviewStatus)
-  status?: ReviewStatus;
 
   @ApiPropertyOptional({
     type: [String],

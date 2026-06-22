@@ -42,7 +42,13 @@ const userSummarySelect = {
   id: true,
   email: true,
   hostname: true,
-  settings: { select: { nickname: true } },
+  settings: {
+    select: {
+      nickname: true,
+      mailNotificationsEnabled: true,
+      ircNotificationsEnabled: true,
+    },
+  },
   profileImage: { select: { userId: true } },
 } satisfies Prisma.UserSelect;
 
@@ -291,6 +297,9 @@ export class UsersService {
       email: user.email,
       hostname: user.hostname,
       nickname: user.settings?.nickname ?? null,
+      mailNotificationsEnabled:
+        user.settings?.mailNotificationsEnabled ?? false,
+      ircNotificationsEnabled: user.settings?.ircNotificationsEnabled ?? false,
       hasProfileImage: !!user.profileImage,
     };
   }

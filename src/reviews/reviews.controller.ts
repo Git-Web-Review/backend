@@ -25,6 +25,7 @@ import {
   ApiValidationErrorResponse,
 } from "../common/swagger/api-error-responses";
 import { CreateReviewCommentDto } from "./dto/create-review-comment.dto";
+import { CreateReviewCommentMessageDto } from "./dto/create-review-comment-message.dto";
 import { CreateReviewDto } from "./dto/create-review.dto";
 import { PreviewReviewDto } from "./dto/preview-review.dto";
 import { ReviewCommentResponseDto } from "./dto/review-comment-response.dto";
@@ -33,6 +34,7 @@ import { ReviewDashboardResponseDto } from "./dto/review-dashboard-response.dto"
 import { ReviewDeletionResponseDto } from "./dto/review-deletion-response.dto";
 import { ReviewPreviewResponseDto } from "./dto/review-preview-response.dto";
 import { ReviewResponseDto } from "./dto/review-response.dto";
+import { UpdateReviewCommentMessageDto } from "./dto/update-review-comment-message.dto";
 import { UpdateReviewCommentDto } from "./dto/update-review-comment.dto";
 import { UpdateReviewDto } from "./dto/update-review.dto";
 import { ReviewsService } from "./reviews.service";
@@ -131,6 +133,72 @@ export class ReviewsController {
     return this.reviewsService.addComment(user, id, dto);
   }
 
+  @Post(":id/comments/:commentId/messages")
+  @ApiOperation({ summary: "Reply to a review comment conversation" })
+  @ApiCreatedResponse({
+    description: "Review comment reply added",
+    type: [ReviewCommentResponseDto],
+  })
+  @ApiValidationErrorResponse()
+  @ApiNotFoundErrorResponse()
+  addCommentMessage(
+    @CurrentUser() user: User,
+    @Param("id") id: string,
+    @Param("commentId") commentId: string,
+    @Body() dto: CreateReviewCommentMessageDto,
+  ): Promise<ReviewCommentResponseDto[]> {
+    return this.reviewsService.addCommentMessage(user, id, commentId, dto);
+  }
+
+  @Patch(":id/comments/:commentId/messages/:messageId")
+  @ApiOperation({
+    summary: "Edit a review comment message owned by the current user",
+  })
+  @ApiOkResponse({
+    description: "Review comment message updated",
+    type: [ReviewCommentResponseDto],
+  })
+  @ApiValidationErrorResponse()
+  @ApiNotFoundErrorResponse()
+  updateCommentMessage(
+    @CurrentUser() user: User,
+    @Param("id") id: string,
+    @Param("commentId") commentId: string,
+    @Param("messageId") messageId: string,
+    @Body() dto: UpdateReviewCommentMessageDto,
+  ): Promise<ReviewCommentResponseDto[]> {
+    return this.reviewsService.updateCommentMessage(
+      user,
+      id,
+      commentId,
+      messageId,
+      dto,
+    );
+  }
+
+  @Delete(":id/comments/:commentId/messages/:messageId")
+  @ApiOperation({
+    summary: "Delete a review comment message owned by the current user",
+  })
+  @ApiOkResponse({
+    description: "Review comment message deleted",
+    type: ReviewDeletionResponseDto,
+  })
+  @ApiNotFoundErrorResponse()
+  deleteCommentMessage(
+    @CurrentUser() user: User,
+    @Param("id") id: string,
+    @Param("commentId") commentId: string,
+    @Param("messageId") messageId: string,
+  ): Promise<ReviewDeletionResponseDto> {
+    return this.reviewsService.deleteCommentMessage(
+      user,
+      id,
+      commentId,
+      messageId,
+    );
+  }
+
   @Patch(":id/comments/:commentId")
   @ApiOperation({ summary: "Mark a review comment as done or not done" })
   @ApiOkResponse({
@@ -146,6 +214,23 @@ export class ReviewsController {
     @Body() dto: UpdateReviewCommentDto,
   ): Promise<ReviewCommentResponseDto[]> {
     return this.reviewsService.updateComment(user, id, commentId, dto);
+  }
+
+  @Delete(":id/comments/:commentId")
+  @ApiOperation({
+    summary: "Delete a review comment owned by the current user",
+  })
+  @ApiOkResponse({
+    description: "Review comment deleted",
+    type: ReviewDeletionResponseDto,
+  })
+  @ApiNotFoundErrorResponse()
+  deleteComment(
+    @CurrentUser() user: User,
+    @Param("id") id: string,
+    @Param("commentId") commentId: string,
+  ): Promise<ReviewDeletionResponseDto> {
+    return this.reviewsService.deleteComment(user, id, commentId);
   }
 
   @Patch(":id/ack")

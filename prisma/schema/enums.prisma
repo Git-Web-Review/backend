@@ -18,7 +18,6 @@ enum NotificationType {
 enum ReviewStatus {
     PENDING
     IN_REVIEW
-    APPROVED
-    CHANGES_REQUESTED
+    ACKED
     CLOSED
 }

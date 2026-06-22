@@ -16,6 +16,7 @@ import { ErrorCode } from "../common/error-code.enum";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateReviewCommentDto } from "./dto/create-review-comment.dto";
+import { CreateReviewCommentMessageDto } from "./dto/create-review-comment-message.dto";
 import { CreateReviewDto } from "./dto/create-review.dto";
 import { PreviewReviewDto } from "./dto/preview-review.dto";
 import { ReviewCommentResponseDto } from "./dto/review-comment-response.dto";
@@ -25,6 +26,7 @@ import { ReviewDeletionResponseDto } from "./dto/review-deletion-response.dto";
 import { ReviewDiffResponseDto } from "./dto/review-diff-file-response.dto";
 import { ReviewPreviewResponseDto } from "./dto/review-preview-response.dto";
 import { ReviewResponseDto } from "./dto/review-response.dto";
+import { UpdateReviewCommentMessageDto } from "./dto/update-review-comment-message.dto";
 import { UpdateReviewCommentDto } from "./dto/update-review-comment.dto";
 import { UpdateReviewDto } from "./dto/update-review.dto";
 
@@ -58,7 +60,13 @@ const userSummarySelect = {
   id: true,
   email: true,
   hostname: true,
-  settings: { select: { nickname: true } },
+  settings: {
+    select: {
+      nickname: true,
+      mailNotificationsEnabled: true,
+      ircNotificationsEnabled: true,
+    },
+  },
   profileImage: { select: { userId: true } },
 } satisfies Prisma.UserSelect;
 
@@ -107,10 +115,10 @@ export class ReviewsService {
   ): Promise<ReviewDashboardResponseDto> {
     const ownedWhere = {
       ownerId: user.id,
-      status: ReviewStatus.PENDING,
+      status: { not: ReviewStatus.CLOSED },
     } satisfies Prisma.ReviewWhereInput;
     const assignedWhere = {
-      status: ReviewStatus.PENDING,
+      status: { not: ReviewStatus.CLOSED },
       reviewers: { some: { userId: user.id } },
     } satisfies Prisma.ReviewWhereInput;
     const doneWhere = {
@@ -295,7 +303,60 @@ export class ReviewsService {
       include: reviewCommentInclude,
     });
 
+    await this.updateReviewStatusAfterComment(user, review);
+
     return this.toCommentResponses(comment)[0];
+  }
+
+  async addCommentMessage(
+    user: User,
+    reviewId: string,
+    commentId: string,
+    dto: CreateReviewCommentMessageDto,
+  ): Promise<ReviewCommentResponseDto[]> {
+    const review = await this.findReviewOrThrow(reviewId);
+    this.assertCanRead(user, review);
+
+    const message = dto.message.trim();
+    if (!message) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.BAD_REQUEST,
+        "Comment message cannot be empty",
+      );
+    }
+
+    const comment = await this.prisma.reviewComment.findFirst({
+      where: { id: commentId, reviewId },
+      select: { id: true },
+    });
+    if (!comment) {
+      throw new AppException(
+        ErrorCode.COMMENT_NOT_FOUND,
+        HttpStatus.NOT_FOUND,
+        "Comment not found",
+      );
+    }
+
+    const updatedComment = await this.prisma.reviewComment.update({
+      where: { id: commentId },
+      data: {
+        done: false,
+        doneById: null,
+        doneAt: null,
+        messages: {
+          create: {
+            fromId: user.id,
+            message,
+          },
+        },
+      },
+      include: reviewCommentInclude,
+    });
+
+    await this.updateReviewStatusAfterComment(user, review);
+
+    return this.toCommentResponses(updatedComment);
   }
 
   async updateComment(
@@ -327,6 +388,162 @@ export class ReviewsService {
       include: reviewCommentInclude,
     });
 
+    await this.refreshReviewStatusFromComments(reviewId, user.id);
+
+    return this.toCommentResponses(updatedComment);
+  }
+
+  async deleteComment(
+    user: User,
+    reviewId: string,
+    commentId: string,
+  ): Promise<ReviewDeletionResponseDto> {
+    const review = await this.findReviewOrThrow(reviewId);
+    this.assertCanRead(user, review);
+
+    const comment = await this.prisma.reviewComment.findFirst({
+      where: { id: commentId, reviewId },
+      select: { id: true, messages: { select: { fromId: true } } },
+    });
+    if (!comment) {
+      throw new AppException(
+        ErrorCode.COMMENT_NOT_FOUND,
+        HttpStatus.NOT_FOUND,
+        "Comment not found",
+      );
+    }
+
+    if (
+      comment.messages.length === 0 ||
+      comment.messages.some((message) => message.fromId !== user.id)
+    ) {
+      throw new AppException(
+        ErrorCode.ROLE_FORBIDDEN,
+        HttpStatus.FORBIDDEN,
+        "Only the comment owner can delete this comment",
+      );
+    }
+
+    await this.prisma.reviewComment.delete({ where: { id: commentId } });
+
+    await this.refreshReviewStatusFromComments(reviewId, user.id);
+
+    return { id: commentId, deleted: true };
+  }
+
+  async deleteCommentMessage(
+    user: User,
+    reviewId: string,
+    commentId: string,
+    messageId: string,
+  ): Promise<ReviewDeletionResponseDto> {
+    const review = await this.findReviewOrThrow(reviewId);
+    this.assertCanRead(user, review);
+
+    const comment = await this.prisma.reviewComment.findFirst({
+      where: { id: commentId, reviewId },
+      select: {
+        id: true,
+        messages: { select: { id: true, fromId: true } },
+      },
+    });
+    if (!comment) {
+      throw new AppException(
+        ErrorCode.COMMENT_NOT_FOUND,
+        HttpStatus.NOT_FOUND,
+        "Comment not found",
+      );
+    }
+
+    const message = comment.messages.find((item) => item.id === messageId);
+    if (!message) {
+      throw new AppException(
+        ErrorCode.COMMENT_NOT_FOUND,
+        HttpStatus.NOT_FOUND,
+        "Comment message not found",
+      );
+    }
+
+    if (message.fromId !== user.id) {
+      throw new AppException(
+        ErrorCode.ROLE_FORBIDDEN,
+        HttpStatus.FORBIDDEN,
+        "Only the comment owner can delete this comment",
+      );
+    }
+
+    await this.prisma.reviewCommentMessage.delete({ where: { id: messageId } });
+
+    if (comment.messages.length === 1) {
+      await this.prisma.reviewComment.delete({ where: { id: commentId } });
+    }
+
+    await this.refreshReviewStatusFromComments(reviewId, user.id);
+
+    return { id: messageId, deleted: true };
+  }
+
+  async updateCommentMessage(
+    user: User,
+    reviewId: string,
+    commentId: string,
+    messageId: string,
+    dto: UpdateReviewCommentMessageDto,
+  ): Promise<ReviewCommentResponseDto[]> {
+    const review = await this.findReviewOrThrow(reviewId);
+    this.assertCanRead(user, review);
+
+    const nextMessage = dto.message.trim();
+    if (!nextMessage) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.BAD_REQUEST,
+        "Comment message cannot be empty",
+      );
+    }
+
+    const comment = await this.prisma.reviewComment.findFirst({
+      where: { id: commentId, reviewId },
+      select: {
+        id: true,
+        messages: { select: { id: true, fromId: true } },
+      },
+    });
+    if (!comment) {
+      throw new AppException(
+        ErrorCode.COMMENT_NOT_FOUND,
+        HttpStatus.NOT_FOUND,
+        "Comment not found",
+      );
+    }
+
+    const message = comment.messages.find((item) => item.id === messageId);
+    if (!message) {
+      throw new AppException(
+        ErrorCode.COMMENT_NOT_FOUND,
+        HttpStatus.NOT_FOUND,
+        "Comment message not found",
+      );
+    }
+
+    if (message.fromId !== user.id) {
+      throw new AppException(
+        ErrorCode.ROLE_FORBIDDEN,
+        HttpStatus.FORBIDDEN,
+        "Only the comment owner can edit this comment",
+      );
+    }
+
+    await this.prisma.reviewCommentMessage.update({
+      where: { id: messageId },
+      data: { message: nextMessage },
+    });
+
+    const updatedComment = await this.prisma.reviewComment.findUniqueOrThrow({
+      where: { id: commentId },
+      include: reviewCommentInclude,
+    });
+
     return this.toCommentResponses(updatedComment);
   }
 
@@ -350,7 +567,12 @@ export class ReviewsService {
       data: { acknowledgedAt: new Date() },
     });
 
-    return this.toResponse(await this.findReviewOrThrow(reviewId));
+    const updatedReview = await this.refreshReviewStatusFromComments(
+      reviewId,
+      user.id,
+    );
+
+    return this.toResponse(updatedReview);
   }
 
   async close(user: User, reviewId: string): Promise<ReviewResponseDto> {
@@ -361,14 +583,11 @@ export class ReviewsService {
       return this.toResponse(review);
     }
 
-    if (
-      review.reviewers.length === 0 ||
-      !review.reviewers.some((reviewer) => reviewer.acknowledgedAt)
-    ) {
+    if (review.status !== ReviewStatus.ACKED) {
       throw new AppException(
         ErrorCode.UNKNOWN_ERROR,
         HttpStatus.BAD_REQUEST,
-        "At least one reviewer must acknowledge the review before it can be closed",
+        "Review must be acked before it can be closed",
       );
     }
 
@@ -396,10 +615,6 @@ export class ReviewsService {
     const existingReview = await this.findReviewOrThrow(reviewId);
     if (this.hasOwnerOnlyUpdate(dto)) {
       this.assertIsOwner(user, existingReview);
-    }
-    if (dto.status !== undefined) {
-      this.assertIsReviewer(user, existingReview);
-      this.assertReviewerStatusCanBeUpdated(dto.status);
     }
 
     const reviewerUserIds = dto.reviewerUserIds
@@ -433,21 +648,12 @@ export class ReviewsService {
           ...(dto.description !== undefined
             ? { description: this.nullIfBlank(dto.description) }
             : {}),
-          ...(dto.status !== undefined ? { status: dto.status } : {}),
         },
         include: reviewInclude,
       });
     });
 
     await this.notifyReviewers(review, addedReviewerIds);
-    if (dto.status !== undefined && existingReview.status !== review.status) {
-      await this.notifyReviewStatusChanged(
-        review,
-        existingReview.status,
-        review.status,
-        user.id,
-      );
-    }
     return this.toResponse(review);
   }
 
@@ -456,7 +662,7 @@ export class ReviewsService {
     reviewId: string,
   ): Promise<ReviewDeletionResponseDto> {
     const existingReview = await this.findReviewOrThrow(reviewId);
-    this.assertCanUpdate(user, existingReview);
+    this.assertIsOwner(user, existingReview);
 
     await this.prisma.review.delete({ where: { id: reviewId } });
 
@@ -534,18 +740,6 @@ export class ReviewsService {
     );
   }
 
-  private assertReviewerStatusCanBeUpdated(status: ReviewStatus): void {
-    if (status !== ReviewStatus.CLOSED) {
-      return;
-    }
-
-    throw new AppException(
-      ErrorCode.ROLE_FORBIDDEN,
-      HttpStatus.FORBIDDEN,
-      "Close the review with the close endpoint after at least one reviewer acknowledged it",
-    );
-  }
-
   private assertCanResolveComment(
     user: User,
     review: ReviewWithRelations,
@@ -562,6 +756,88 @@ export class ReviewsService {
       HttpStatus.FORBIDDEN,
       "Only the review owner or reviewers can mark comments as done",
     );
+  }
+
+  private async updateReviewStatusAfterComment(
+    user: User,
+    review: ReviewWithRelations,
+  ): Promise<void> {
+    if (review.status === ReviewStatus.CLOSED) {
+      return;
+    }
+
+    const reviewerComment = review.reviewers.some(
+      (reviewer) => reviewer.userId === user.id,
+    );
+    if (review.status === ReviewStatus.PENDING && reviewerComment) {
+      await this.updateReviewStatus(
+        review.id,
+        ReviewStatus.IN_REVIEW,
+        review.status,
+        user.id,
+      );
+      return;
+    }
+
+    if (review.status === ReviewStatus.ACKED) {
+      await this.refreshReviewStatusFromComments(review.id, user.id);
+    }
+  }
+
+  private async refreshReviewStatusFromComments(
+    reviewId: string,
+    actorId: string,
+  ): Promise<ReviewWithRelations> {
+    const review = await this.findReviewOrThrow(reviewId);
+    if (review.status === ReviewStatus.CLOSED) {
+      return review;
+    }
+
+    const openCommentCount = await this.prisma.reviewComment.count({
+      where: { reviewId, done: false },
+    });
+    const acknowledged = review.reviewers.some(
+      (reviewer) => !!reviewer.acknowledgedAt,
+    );
+    const nextStatus =
+      acknowledged && openCommentCount === 0
+        ? ReviewStatus.ACKED
+        : review.status === ReviewStatus.ACKED
+          ? ReviewStatus.IN_REVIEW
+          : review.status;
+
+    if (nextStatus === review.status) {
+      return review;
+    }
+
+    return this.updateReviewStatus(
+      reviewId,
+      nextStatus,
+      review.status,
+      actorId,
+    );
+  }
+
+  private async updateReviewStatus(
+    reviewId: string,
+    nextStatus: ReviewStatus,
+    previousStatus: ReviewStatus,
+    actorId: string,
+  ): Promise<ReviewWithRelations> {
+    const review = await this.prisma.review.update({
+      where: { id: reviewId },
+      data: { status: nextStatus },
+      include: reviewInclude,
+    });
+
+    await this.notifyReviewStatusChanged(
+      review,
+      previousStatus,
+      review.status,
+      actorId,
+    );
+
+    return review;
   }
 
   private hasOwnerOnlyUpdate(dto: UpdateReviewDto): boolean {
@@ -756,6 +1032,9 @@ export class ReviewsService {
       email: user.email,
       hostname: user.hostname,
       nickname: user.settings?.nickname ?? null,
+      mailNotificationsEnabled:
+        user.settings?.mailNotificationsEnabled ?? false,
+      ircNotificationsEnabled: user.settings?.ircNotificationsEnabled ?? false,
       hasProfileImage: !!user.profileImage,
     };
   }
