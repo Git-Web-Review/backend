@@ -204,11 +204,8 @@ export class ReviewsService {
       ownerId,
     );
     const gitwebMetadata = await this.fetchGitwebMetadata(dto.gitwebUrl);
-    const title = this.nullIfBlank(dto.title) ?? gitwebMetadata.title;
-    const description =
-      this.nullIfBlank(dto.description) ??
-      gitwebMetadata.description ??
-      gitwebMetadata.log;
+    const title = gitwebMetadata.title;
+    const description = gitwebMetadata.description ?? gitwebMetadata.log;
     const commit = gitwebMetadata.sourceCommit
       ? this.commitFromMetadata(gitwebMetadata, title)
       : null;
@@ -641,14 +638,7 @@ export class ReviewsService {
 
       return tx.review.update({
         where: { id: reviewId },
-        data: {
-          ...(dto.title !== undefined
-            ? { title: this.nullIfBlank(dto.title) }
-            : {}),
-          ...(dto.description !== undefined
-            ? { description: this.nullIfBlank(dto.description) }
-            : {}),
-        },
+        data: {},
         include: reviewInclude,
       });
     });
@@ -841,11 +831,7 @@ export class ReviewsService {
   }
 
   private hasOwnerOnlyUpdate(dto: UpdateReviewDto): boolean {
-    return (
-      dto.title !== undefined ||
-      dto.description !== undefined ||
-      dto.reviewerUserIds !== undefined
-    );
+    return dto.reviewerUserIds !== undefined;
   }
 
   private async validReviewerUserIds(

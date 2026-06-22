@@ -3,10 +3,8 @@ import {
   ArrayUnique,
   IsArray,
   IsOptional,
-  IsString,
   IsUrl,
   IsUUID,
-  MaxLength,
 } from "class-validator";
 
 export class CreateReviewDto {
@@ -15,26 +13,6 @@ export class CreateReviewDto {
   })
   @IsUrl({ require_tld: false })
   gitwebUrl!: string;
-
-  @ApiPropertyOptional({
-    type: String,
-    nullable: true,
-    example: "net: fix route leak",
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(240)
-  title?: string | null;
-
-  @ApiPropertyOptional({
-    type: String,
-    nullable: true,
-    example: "Fix route leak when a device route is deleted.",
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(4000)
-  description?: string | null;
 
   @ApiPropertyOptional({
     type: [String],
