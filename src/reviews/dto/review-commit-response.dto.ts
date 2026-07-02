@@ -1,5 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { ReviewCommitStatus } from "@prisma/client";
+import { ReviewCommitChangeKind, ReviewCommitStatus } from "@prisma/client";
 import { ReviewDiffResponseDto } from "./review-diff-file-response.dto";
 import { ReviewUserSummaryResponseDto } from "./review-user-summary-response.dto";
 
@@ -38,6 +38,12 @@ export class ReviewCommitResponseDto {
 
   @ApiProperty()
   position!: number;
+
+  @ApiProperty({ type: String, nullable: true })
+  patchId!: string | null;
+
+  @ApiProperty({ enum: ReviewCommitChangeKind, nullable: true })
+  changeKind!: ReviewCommitChangeKind | null;
 
   @ApiProperty()
   signedOffByName!: string;

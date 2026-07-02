@@ -35,7 +35,9 @@ import { ReviewDashboardResponseDto } from "./dto/review-dashboard-response.dto"
 import { ReviewDeletionResponseDto } from "./dto/review-deletion-response.dto";
 import { ReviewPreviewResponseDto } from "./dto/review-preview-response.dto";
 import { ReviewResponseDto } from "./dto/review-response.dto";
+import { ReviewSyncPreviewResponseDto } from "./dto/review-sync-preview-response.dto";
 import { SetReviewFieldValueDto } from "./dto/set-review-field-value.dto";
+import { SyncReviewDto } from "./dto/sync-review.dto";
 import { UpdateReviewCommentMessageDto } from "./dto/update-review-comment-message.dto";
 import { UpdateReviewCommentDto } from "./dto/update-review-comment.dto";
 import { UpdateReviewDto } from "./dto/update-review.dto";
@@ -103,6 +105,41 @@ export class ReviewsController {
     @Param("id") id: string,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.getOne(user, id);
+  }
+
+  @Post(":id/sync/preview")
+  @ApiOperation({
+    summary:
+      "Preview the branch changes that would produce a new review version",
+  })
+  @ApiOkResponse({
+    description: "Sync preview returned",
+    type: ReviewSyncPreviewResponseDto,
+  })
+  @ApiNotFoundErrorResponse()
+  syncPreview(
+    @CurrentUser() user: User,
+    @Param("id") id: string,
+  ): Promise<ReviewSyncPreviewResponseDto> {
+    return this.reviewsService.syncPreview(user, id);
+  }
+
+  @Post(":id/sync")
+  @ApiOperation({
+    summary: "Synchronize the review with its branch as a new version",
+  })
+  @ApiOkResponse({
+    description: "Review synchronized",
+    type: ReviewResponseDto,
+  })
+  @ApiValidationErrorResponse()
+  @ApiNotFoundErrorResponse()
+  sync(
+    @CurrentUser() user: User,
+    @Param("id") id: string,
+    @Body() dto: SyncReviewDto,
+  ): Promise<ReviewResponseDto> {
+    return this.reviewsService.sync(user, id, dto);
   }
 
   @Put(":id/fields/:fieldId")

@@ -23,6 +23,9 @@ export class ReviewResponseDto implements Review {
   status!: ReviewStatus;
 
   @ApiProperty()
+  version!: number;
+
+  @ApiProperty()
   ownerId!: string;
 
   @ApiProperty({ type: () => ReviewUserSummaryResponseDto })

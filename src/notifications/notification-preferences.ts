@@ -20,6 +20,8 @@ export function notificationCategory(
   switch (type) {
     case NotificationType.REVIEW_PENDING:
       return "reviewPending";
+    case NotificationType.REVIEW_NEW_VERSION:
+      return "reviewPending";
     case NotificationType.COMMIT_REVIEWED:
       return "reviewDone";
     case NotificationType.COMMENT_RECEIVED:

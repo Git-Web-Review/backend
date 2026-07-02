@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -8,6 +8,7 @@ import {
   NotificationType,
   Prisma,
   ReviewCommentSide,
+  ReviewCommitChangeKind,
   ReviewCommitStatus,
   ReviewFieldType,
   ReviewStatus,
@@ -29,7 +30,9 @@ import { ReviewDeletionResponseDto } from "./dto/review-deletion-response.dto";
 import { ReviewDiffResponseDto } from "./dto/review-diff-file-response.dto";
 import { ReviewPreviewResponseDto } from "./dto/review-preview-response.dto";
 import { ReviewResponseDto } from "./dto/review-response.dto";
+import { ReviewSyncPreviewResponseDto } from "./dto/review-sync-preview-response.dto";
 import { SetReviewFieldValueDto } from "./dto/set-review-field-value.dto";
+import { SyncReviewDto } from "./dto/sync-review.dto";
 import { UpdateReviewCommentMessageDto } from "./dto/update-review-comment-message.dto";
 import { UpdateReviewCommentDto } from "./dto/update-review-comment.dto";
 import { UpdateReviewDto } from "./dto/update-review.dto";
@@ -70,6 +73,29 @@ type GitCommitMetadata = {
   authorName: string;
   authorEmail: string;
   gitDiff: ReviewDiffResponseDto;
+};
+
+type ReviewCommitWithAcks = Prisma.ReviewCommitGetPayload<{
+  include: { acks: true };
+}>;
+
+type SyncPlanEntry = {
+  hash: string;
+  title: string;
+  authorName: string;
+  authoredAt: string | null;
+  position: number;
+  changeKind: ReviewCommitChangeKind;
+  previous: ReviewCommitWithAcks | null;
+  metadata: GitCommitMetadata | null;
+  patchId: string | null;
+};
+
+type SyncPlan = {
+  branch: string;
+  entries: SyncPlanEntry[];
+  dropped: ReviewCommitWithAcks[];
+  hasChanges: boolean;
 };
 
 const userSummarySelect = {
@@ -1020,6 +1046,418 @@ export class ReviewsService {
     return this.toResponse(review);
   }
 
+  async syncPreview(
+    user: User,
+    reviewId: string,
+  ): Promise<ReviewSyncPreviewResponseDto> {
+    const review = await this.findReviewOrThrow(reviewId);
+    this.assertIsOwner(user, review);
+    this.assertSyncable(review);
+
+    const plan = await this.computeSyncPlan(review);
+
+    return {
+      reviewId: review.id,
+      version: review.version,
+      sourceBranch: plan.branch,
+      hasChanges: plan.hasChanges,
+      commits: plan.entries.map((entry) => ({
+        hash: entry.hash,
+        title: entry.title,
+        changeKind: entry.changeKind,
+        previousHash: entry.previous?.hash ?? null,
+        previousTitle: entry.previous?.title ?? null,
+        authorName: entry.authorName,
+        authoredAt: entry.authoredAt,
+      })),
+      droppedCommits: plan.dropped.map((commit) => ({
+        hash: commit.hash,
+        title: commit.title,
+      })),
+    };
+  }
+
+  async sync(
+    user: User,
+    reviewId: string,
+    dto: SyncReviewDto,
+  ): Promise<ReviewResponseDto> {
+    const review = await this.findReviewOrThrow(reviewId);
+    this.assertIsOwner(user, review);
+    this.assertSyncable(review);
+
+    const plan = await this.computeSyncPlan(review, dto.commitHashes);
+    if (!plan.hasChanges) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.BAD_REQUEST,
+        "The branch has no changes since the current review version",
+      );
+    }
+
+    const commitCount = plan.entries.length;
+    const nextTitle =
+      commitCount === 1
+        ? plan.entries[0].title
+        : `${plan.branch} (${commitCount} commits)`;
+    const nextLog = this.truncate(
+      plan.entries
+        .map((entry) => entry.title)
+        .reverse()
+        .join("\n"),
+      20000,
+    );
+    const nextDescription =
+      commitCount > 1
+        ? plan.entries.map((entry) => `- ${entry.title}`).join("\n")
+        : nextLog;
+    const modifiedWithAcks = plan.entries.filter(
+      (entry) =>
+        entry.changeKind === ReviewCommitChangeKind.MODIFIED &&
+        entry.previous &&
+        entry.previous.acks.length > 0,
+    );
+    const allCommitsStayAcked =
+      plan.dropped.length === 0 &&
+      plan.entries.every(
+        (entry) =>
+          (entry.changeKind === ReviewCommitChangeKind.UNCHANGED ||
+            entry.changeKind === ReviewCommitChangeKind.REBASED) &&
+          entry.previous?.status === ReviewCommitStatus.ACKED,
+      );
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const dropped of plan.dropped) {
+        await tx.reviewComment.updateMany({
+          where: { reviewId, commitHash: dropped.hash },
+          data: { commitHash: null },
+        });
+      }
+      if (plan.dropped.length) {
+        await tx.reviewCommit.deleteMany({
+          where: { id: { in: plan.dropped.map((commit) => commit.id) } },
+        });
+      }
+
+      const rehashedEntries = plan.entries.filter(
+        (entry) => entry.previous && entry.previous.hash !== entry.hash,
+      );
+
+      // Two-phase hash swap to avoid transient collisions on the
+      // (reviewId, hash) unique constraint when hashes are chained.
+      for (const entry of rehashedEntries) {
+        await tx.reviewCommit.update({
+          where: { id: entry.previous!.id },
+          data: { hash: `sync:${entry.previous!.id}` },
+        });
+        await tx.reviewComment.updateMany({
+          where: { reviewId, commitHash: entry.previous!.hash },
+          data: { commitHash: `sync:${entry.previous!.id}` },
+        });
+      }
+
+      for (const entry of plan.entries) {
+        if (!entry.previous) {
+          await tx.reviewCommit.create({
+            data: {
+              reviewId,
+              ...this.commitCreateFromGitMetadata(
+                entry.metadata!,
+                entry.position,
+              ),
+              patchId: entry.patchId,
+              changeKind: ReviewCommitChangeKind.NEW,
+            },
+          });
+          continue;
+        }
+
+        const contentUpdate = entry.metadata
+          ? {
+              ...this.commitCreateFromGitMetadata(
+                entry.metadata,
+                entry.position,
+              ),
+              patchId: entry.patchId,
+            }
+          : { position: entry.position };
+
+        await tx.reviewCommit.update({
+          where: { id: entry.previous.id },
+          data: {
+            ...contentUpdate,
+            hash: entry.hash,
+            changeKind: entry.changeKind,
+            ...(entry.changeKind === ReviewCommitChangeKind.MODIFIED
+              ? { status: ReviewCommitStatus.PENDING }
+              : {}),
+          },
+        });
+      }
+
+      for (const entry of rehashedEntries) {
+        await tx.reviewComment.updateMany({
+          where: { reviewId, commitHash: `sync:${entry.previous!.id}` },
+          data: { commitHash: entry.hash },
+        });
+      }
+
+      if (modifiedWithAcks.length) {
+        await tx.reviewCommitAck.deleteMany({
+          where: {
+            reviewCommitId: {
+              in: modifiedWithAcks.map((entry) => entry.previous!.id),
+            },
+          },
+        });
+      }
+
+      if (!allCommitsStayAcked) {
+        await tx.reviewReviewer.updateMany({
+          where: { reviewId },
+          data: { acknowledgedAt: null },
+        });
+      }
+
+      await tx.review.update({
+        where: { id: reviewId },
+        data: {
+          version: review.version + 1,
+          sourceCommit: plan.entries.at(-1)?.hash ?? review.sourceCommit,
+          title: nextTitle,
+          description: this.truncate(nextDescription, 4000),
+          gitwebLog: nextLog,
+          gitwebFetchedAt: new Date(),
+          gitwebFetchError: null,
+        },
+      });
+    });
+
+    const refreshedReview = await this.refreshReviewStatusFromComments(
+      reviewId,
+      user.id,
+    );
+    await this.notifyNewVersion(refreshedReview, plan, user.id);
+
+    return this.toResponse(refreshedReview);
+  }
+
+  private assertSyncable(review: ReviewWithRelations): void {
+    if (review.status === ReviewStatus.CLOSED) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.BAD_REQUEST,
+        "Review is closed",
+      );
+    }
+  }
+
+  private async computeSyncPlan(
+    review: ReviewWithRelations,
+    selectedHashes?: string[],
+  ): Promise<SyncPlan> {
+    const metadata = this.metadataFromUrl(review.gitwebUrl);
+    const branch = review.sourceBranch ?? metadata.sourceBranch;
+    if (!metadata.remoteUrl || !branch) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.BAD_REQUEST,
+        "This review has no source branch to synchronize from",
+      );
+    }
+
+    const { options } = await this.fetchGitBranchCommitOptions(
+      metadata.remoteUrl,
+      branch,
+    );
+    if (options.length === 0) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.BAD_REQUEST,
+        `No commits to review on branch "${branch}": it has no commits ahead of origin/master`,
+      );
+    }
+
+    const normalizedSelection = selectedHashes?.map((hash) =>
+      hash.toLowerCase(),
+    );
+    const selected = normalizedSelection?.length
+      ? options.filter((option) =>
+          normalizedSelection.some((hash) =>
+            option.hash.toLowerCase().startsWith(hash),
+          ),
+        )
+      : options;
+    if (selected.length === 0) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.BAD_REQUEST,
+        "No matching commits selected for the new version",
+      );
+    }
+
+    const orderedOldestFirst = [...selected].reverse();
+    const oldPatchIds = await this.ensureCommitPatchIds(review.commits);
+    const remainingOld = new Map(
+      review.commits.map((commit) => [commit.id, commit]),
+    );
+
+    const entries: SyncPlanEntry[] = [];
+    for (const [position, option] of orderedOldestFirst.entries()) {
+      const previousByHash = [...remainingOld.values()].find(
+        (commit) => commit.hash === option.hash,
+      );
+      if (previousByHash) {
+        remainingOld.delete(previousByHash.id);
+        entries.push({
+          hash: option.hash,
+          title: option.title,
+          authorName: option.authorName,
+          authoredAt: option.authoredAt,
+          position,
+          changeKind: ReviewCommitChangeKind.UNCHANGED,
+          previous: previousByHash,
+          metadata: null,
+          patchId: oldPatchIds.get(previousByHash.id) ?? null,
+        });
+        continue;
+      }
+
+      const commitMetadata = await this.fetchGitCommitMetadata(
+        metadata.remoteUrl,
+        option.hash,
+      );
+      entries.push({
+        hash: commitMetadata.hash,
+        title: commitMetadata.title,
+        authorName: option.authorName,
+        authoredAt: option.authoredAt,
+        position,
+        changeKind: ReviewCommitChangeKind.NEW,
+        previous: null,
+        metadata: commitMetadata,
+        patchId: await this.patchIdFromGitDiff(commitMetadata.gitDiff),
+      });
+    }
+
+    const unmatched = entries.filter((entry) => !entry.previous);
+
+    // Pass 2: identical patch-id means the commit content is unchanged
+    // (pure rebase), so statuses and acks are preserved.
+    for (const entry of unmatched) {
+      if (!entry.patchId) {
+        continue;
+      }
+      const match = [...remainingOld.values()].find(
+        (commit) => oldPatchIds.get(commit.id) === entry.patchId,
+      );
+      if (match) {
+        remainingOld.delete(match.id);
+        entry.previous = match;
+        entry.changeKind = ReviewCommitChangeKind.REBASED;
+      }
+    }
+
+    // Pass 3: same title on both sides (unique) means the commit was
+    // amended in place.
+    for (const entry of unmatched) {
+      if (entry.previous) {
+        continue;
+      }
+      const titleMatches = [...remainingOld.values()].filter(
+        (commit) => commit.title === entry.title,
+      );
+      const duplicateNew = unmatched.filter(
+        (other) => !other.previous && other.title === entry.title,
+      );
+      if (titleMatches.length === 1 && duplicateNew.length === 1) {
+        remainingOld.delete(titleMatches[0].id);
+        entry.previous = titleMatches[0];
+        entry.changeKind = ReviewCommitChangeKind.MODIFIED;
+      }
+    }
+
+    // Pass 4: pair leftovers by order as a last resort.
+    const leftoversNew = unmatched.filter((entry) => !entry.previous);
+    const leftoversOld = [...remainingOld.values()].sort(
+      (left, right) => left.position - right.position,
+    );
+    for (const [index, entry] of leftoversNew.entries()) {
+      const candidate = leftoversOld[index];
+      if (!candidate) {
+        break;
+      }
+      remainingOld.delete(candidate.id);
+      entry.previous = candidate;
+      entry.changeKind = ReviewCommitChangeKind.MODIFIED;
+    }
+
+    const dropped = [...remainingOld.values()];
+    const hasChanges =
+      dropped.length > 0 ||
+      entries.some(
+        (entry) =>
+          entry.changeKind !== ReviewCommitChangeKind.UNCHANGED ||
+          entry.previous?.position !== entry.position,
+      );
+
+    return { branch, entries, dropped, hasChanges };
+  }
+
+  private async ensureCommitPatchIds(
+    commits: ReviewCommitWithAcks[],
+  ): Promise<Map<string, string | null>> {
+    const patchIds = new Map<string, string | null>();
+    for (const commit of commits) {
+      if (commit.patchId) {
+        patchIds.set(commit.id, commit.patchId);
+        continue;
+      }
+
+      const patchId = await this.patchIdFromGitDiff(
+        this.gitDiffFromJson(commit.gitDiff),
+      );
+      patchIds.set(commit.id, patchId);
+      if (patchId) {
+        await this.prisma.reviewCommit.update({
+          where: { id: commit.id },
+          data: { patchId },
+        });
+      }
+    }
+    return patchIds;
+  }
+
+  private patchIdFromGitDiff(
+    gitDiff: ReviewDiffResponseDto,
+  ): Promise<string | null> {
+    return this.gitPatchId(gitDiff.files.map((file) => file.patch).join("\n"));
+  }
+
+  private gitPatchId(patch: string): Promise<string | null> {
+    const input = patch.trim();
+    if (!input) {
+      return Promise.resolve(null);
+    }
+
+    return new Promise((resolve) => {
+      const child = spawn("git", ["patch-id", "--stable"], {
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      });
+      let stdout = "";
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => {
+        stdout += chunk;
+      });
+      child.on("error", () => resolve(null));
+      child.on("close", () => {
+        resolve(stdout.trim().split(/\s+/)[0] || null);
+      });
+      child.stdin.on("error", () => {});
+      child.stdin.end(`${input}\n`);
+    });
+  }
+
   async delete(
     user: User,
     reviewId: string,
@@ -1326,6 +1764,54 @@ export class ReviewsService {
         this.notifications.createForUser(
           userId,
           NotificationType.REVIEW_PENDING,
+          payload,
+        ),
+      ),
+    );
+  }
+
+  private async notifyNewVersion(
+    review: ReviewWithRelations,
+    plan: SyncPlan,
+    actorUserId: string,
+  ): Promise<void> {
+    const recipientUserIds = review.reviewers
+      .map((reviewer) => reviewer.userId)
+      .filter((userId) => userId !== actorUserId);
+    if (recipientUserIds.length === 0) {
+      return;
+    }
+
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorUserId },
+      select: userSummarySelect,
+    });
+    const countByKind = (kind: ReviewCommitChangeKind) =>
+      plan.entries.filter((entry) => entry.changeKind === kind).length;
+    const payload = {
+      reviewId: review.id,
+      title: review.title,
+      gitwebUrl: review.gitwebUrl,
+      ownerEmail: review.owner.email,
+      sourceProject: review.sourceProject,
+      sourceBranch: review.sourceBranch,
+      sourceCommit: review.sourceCommit,
+      gitwebTitle: review.gitwebTitle,
+      version: review.version,
+      commitCount: plan.entries.length,
+      newCount: countByKind(ReviewCommitChangeKind.NEW),
+      modifiedCount: countByKind(ReviewCommitChangeKind.MODIFIED),
+      rebasedCount: countByKind(ReviewCommitChangeKind.REBASED),
+      droppedCount: plan.dropped.length,
+      actorEmail: actor?.email ?? null,
+      actorNickname: actor?.settings?.nickname ?? null,
+    } satisfies Prisma.InputJsonObject;
+
+    await Promise.all(
+      recipientUserIds.map((userId) =>
+        this.notifications.createForUser(
+          userId,
+          NotificationType.REVIEW_NEW_VERSION,
           payload,
         ),
       ),
@@ -1807,7 +2293,10 @@ export class ReviewsService {
           metadata.remoteUrl,
           option.hash,
         );
-        creates.push(this.commitCreateFromGitMetadata(commitMetadata, index));
+        creates.push({
+          ...this.commitCreateFromGitMetadata(commitMetadata, index),
+          patchId: await this.patchIdFromGitDiff(commitMetadata.gitDiff),
+        });
       }
       return creates;
     }
@@ -1821,6 +2310,7 @@ export class ReviewsService {
         ...this.commitFromMetadata(metadata, metadata.title),
         position: 0,
         gitDiff: metadata.gitDiff as unknown as Prisma.InputJsonObject,
+        patchId: await this.patchIdFromGitDiff(metadata.gitDiff),
       },
     ];
   }
