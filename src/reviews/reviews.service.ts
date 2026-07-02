@@ -892,6 +892,91 @@ export class ReviewsService {
 
     return this.toResponse(closedReview);
   }
+
+  async closeAckedReviewsMergedOnMaster(): Promise<number> {
+    const ackedReviews = await this.prisma.review.findMany({
+      where: { status: ReviewStatus.ACKED },
+      include: reviewInclude,
+    });
+
+    let closedCount = 0;
+    for (const review of ackedReviews) {
+      try {
+        if (!(await this.reviewMergedOnMaster(review))) {
+          continue;
+        }
+      } catch {
+        continue;
+      }
+
+      const closedReview = await this.prisma.review.update({
+        where: { id: review.id },
+        data: { status: ReviewStatus.CLOSED },
+        include: reviewInclude,
+      });
+      await this.notifyReviewStatusChanged(
+        closedReview,
+        ReviewStatus.ACKED,
+        ReviewStatus.CLOSED,
+        "",
+      );
+      closedCount += 1;
+    }
+
+    return closedCount;
+  }
+
+  private async reviewMergedOnMaster(
+    review: ReviewWithRelations,
+  ): Promise<boolean> {
+    if (review.commits.length === 0) {
+      return false;
+    }
+
+    const metadata = this.metadataFromUrl(review.gitwebUrl);
+    if (!metadata.remoteUrl) {
+      return false;
+    }
+
+    const repoPath = await this.ensureGitCache(metadata.remoteUrl);
+    await this.runGit([
+      "-C",
+      repoPath,
+      "fetch",
+      "--depth=300",
+      metadata.remoteUrl,
+      "+refs/remotes/origin/master:refs/gwr/master",
+    ]);
+
+    for (const commit of review.commits) {
+      await this.runGit([
+        "-C",
+        repoPath,
+        "fetch",
+        "--depth=2",
+        metadata.remoteUrl,
+        commit.hash,
+      ]);
+
+      // "git cherry" marks the commit with "-" when a patch-equivalent
+      // commit exists upstream, which also covers rebased commits.
+      const cherry = await this.runGit([
+        "-C",
+        repoPath,
+        "cherry",
+        "refs/gwr/master",
+        commit.hash,
+        `${commit.hash}~1`,
+      ]);
+      const lines = cherry.split("\n").filter((line) => line.trim());
+      if (lines.some((line) => line.startsWith("+"))) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   async update(
     user: User,
     reviewId: string,

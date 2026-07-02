@@ -4,6 +4,7 @@ import { LoggerModule } from "nestjs-pino";
 import { AdminModule } from "./admin/admin.module";
 import { AuthModule } from "./auth/auth.module";
 import { CommitLogLinkRulesModule } from "./commit-log-link-rules/commit-log-link-rules.module";
+import { CronModule } from "./cron/cron.module";
 import { HealthModule } from "./health/health.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { PrismaModule } from "./prisma/prisma.module";
@@ -62,6 +63,7 @@ import { UsersModule } from "./users/users.module";
     ReviewFieldsModule,
     ReviewsModule,
     SettingsModule,
+    CronModule,
     NotificationsModule,
     HealthModule,
   ],

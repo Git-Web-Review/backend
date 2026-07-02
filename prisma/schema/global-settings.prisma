@@ -1,8 +1,13 @@
 model GlobalSettings {
-    id                  String   @id @default("global")
-    allowedOAuthDomains String[] @default([]) @map("allowed_oauth_domains")
-    createdAt           DateTime @default(now()) @map("created_at")
-    updatedAt           DateTime @updatedAt @map("updated_at")
+    id                               String   @id @default("global")
+    allowedOAuthDomains              String[] @default([]) @map("allowed_oauth_domains")
+    notificationPurgeEnabled         Boolean  @default(false) @map("notification_purge_enabled")
+    notificationPurgeIntervalMinutes Int      @default(60) @map("notification_purge_interval_minutes")
+    notificationPurgeAfterDays       Int      @default(30) @map("notification_purge_after_days")
+    reviewAutoCloseEnabled           Boolean  @default(false) @map("review_auto_close_enabled")
+    reviewAutoCloseIntervalMinutes   Int      @default(60) @map("review_auto_close_interval_minutes")
+    createdAt                        DateTime @default(now()) @map("created_at")
+    updatedAt                        DateTime @updatedAt @map("updated_at")
 
     @@map("global_settings")
 }

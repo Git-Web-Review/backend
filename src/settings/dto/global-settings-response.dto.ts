@@ -9,6 +9,21 @@ export class GlobalSettingsResponseDto implements GlobalSettings {
   allowedOAuthDomains!: string[];
 
   @ApiProperty()
+  notificationPurgeEnabled!: boolean;
+
+  @ApiProperty()
+  notificationPurgeIntervalMinutes!: number;
+
+  @ApiProperty()
+  notificationPurgeAfterDays!: number;
+
+  @ApiProperty()
+  reviewAutoCloseEnabled!: boolean;
+
+  @ApiProperty()
+  reviewAutoCloseIntervalMinutes!: number;
+
+  @ApiProperty()
   createdAt!: Date;
 
   @ApiProperty()

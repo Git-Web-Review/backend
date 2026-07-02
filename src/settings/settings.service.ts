@@ -18,18 +18,28 @@ export class SettingsService {
   }
 
   updateGlobalSettings(dto: UpdateGlobalSettingsDto): Promise<GlobalSettings> {
-    const allowedOAuthDomains = [
-      ...new Set(
-        dto.allowedOAuthDomains
-          .map((domain) => domain.trim().toLowerCase())
-          .filter(Boolean),
-      ),
-    ];
+    const allowedOAuthDomains = dto.allowedOAuthDomains
+      ? [
+          ...new Set(
+            dto.allowedOAuthDomains
+              .map((domain) => domain.trim().toLowerCase())
+              .filter(Boolean),
+          ),
+        ]
+      : undefined;
+    const data = {
+      allowedOAuthDomains,
+      notificationPurgeEnabled: dto.notificationPurgeEnabled,
+      notificationPurgeIntervalMinutes: dto.notificationPurgeIntervalMinutes,
+      notificationPurgeAfterDays: dto.notificationPurgeAfterDays,
+      reviewAutoCloseEnabled: dto.reviewAutoCloseEnabled,
+      reviewAutoCloseIntervalMinutes: dto.reviewAutoCloseIntervalMinutes,
+    };
 
     return this.prisma.globalSettings.upsert({
       where: { id: GLOBAL_SETTINGS_ID },
-      update: { allowedOAuthDomains },
-      create: { id: GLOBAL_SETTINGS_ID, allowedOAuthDomains },
+      update: data,
+      create: { id: GLOBAL_SETTINGS_ID, ...data },
     });
   }
 }
