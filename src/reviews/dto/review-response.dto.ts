@@ -2,6 +2,7 @@ import { ApiProperty } from "@nestjs/swagger";
 import { Prisma, ReviewStatus, type Review } from "@prisma/client";
 import { ReviewCommitResponseDto } from "./review-commit-response.dto";
 import { ReviewDiffResponseDto } from "./review-diff-file-response.dto";
+import { ReviewFieldValueResponseDto } from "./review-field-value-response.dto";
 import { ReviewReviewerResponseDto } from "./review-reviewer-response.dto";
 import { ReviewUserSummaryResponseDto } from "./review-user-summary-response.dto";
 
@@ -65,6 +66,9 @@ export class ReviewResponseDto implements Review {
 
   @ApiProperty({ type: () => [ReviewReviewerResponseDto] })
   reviewers!: ReviewReviewerResponseDto[];
+
+  @ApiProperty({ type: () => [ReviewFieldValueResponseDto] })
+  fieldValues!: ReviewFieldValueResponseDto[];
 
   @ApiProperty({ type: () => ReviewDiffResponseDto })
   gitDiff!: ReviewDiffResponseDto;

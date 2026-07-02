@@ -18,9 +18,10 @@ model Review {
   createdAt        DateTime     @default(now()) @map("created_at")
   updatedAt        DateTime     @updatedAt @map("updated_at")
 
-  commits   ReviewCommit[]
-  reviewers ReviewReviewer[]
-  comments  ReviewComment[]
+  commits     ReviewCommit[]
+  reviewers   ReviewReviewer[]
+  comments    ReviewComment[]
+  fieldValues ReviewFieldValue[]
 
   @@index([status, updatedAt])
   @@map("reviews")

@@ -35,3 +35,10 @@ enum ReviewCommentSide {
     BEFORE
     AFTER
 }
+
+enum ReviewFieldType {
+    LINK
+    IMAGE
+    TEXT
+    NUMBER
+}

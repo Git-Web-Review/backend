@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -34,6 +35,7 @@ import { ReviewDashboardResponseDto } from "./dto/review-dashboard-response.dto"
 import { ReviewDeletionResponseDto } from "./dto/review-deletion-response.dto";
 import { ReviewPreviewResponseDto } from "./dto/review-preview-response.dto";
 import { ReviewResponseDto } from "./dto/review-response.dto";
+import { SetReviewFieldValueDto } from "./dto/set-review-field-value.dto";
 import { UpdateReviewCommentMessageDto } from "./dto/update-review-comment-message.dto";
 import { UpdateReviewCommentDto } from "./dto/update-review-comment.dto";
 import { UpdateReviewDto } from "./dto/update-review.dto";
@@ -101,6 +103,23 @@ export class ReviewsController {
     @Param("id") id: string,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.getOne(user, id);
+  }
+
+  @Put(":id/fields/:fieldId")
+  @ApiOperation({ summary: "Set a review field value" })
+  @ApiOkResponse({
+    description: "Review field value updated",
+    type: ReviewResponseDto,
+  })
+  @ApiValidationErrorResponse()
+  @ApiNotFoundErrorResponse()
+  setFieldValue(
+    @CurrentUser() user: User,
+    @Param("id") id: string,
+    @Param("fieldId") fieldId: string,
+    @Body() dto: SetReviewFieldValueDto,
+  ): Promise<ReviewResponseDto> {
+    return this.reviewsService.setFieldValue(user, id, fieldId, dto);
   }
 
   @Get(":id/comments")

@@ -1,12 +1,27 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { Type } from "class-transformer";
 import {
   ArrayUnique,
   IsArray,
   IsOptional,
+  IsString,
   IsUrl,
   IsUUID,
   Matches,
+  MaxLength,
+  ValidateNested,
 } from "class-validator";
+
+export class CreateReviewFieldValueDto {
+  @ApiProperty({ example: "9ad1e3de-a9af-4e2f-8d3d-4d6f6c85439a" })
+  @IsUUID("4")
+  fieldId!: string;
+
+  @ApiProperty({ example: "https://tracker.example.test/issues/42" })
+  @IsString()
+  @MaxLength(4000)
+  value!: string;
+}
 
 export class CreateReviewDto {
   @ApiProperty({
@@ -36,4 +51,11 @@ export class CreateReviewDto {
   @ArrayUnique()
   @Matches(/^[0-9a-f]{7,40}$/i, { each: true })
   commitHashes?: string[];
+
+  @ApiPropertyOptional({ type: [CreateReviewFieldValueDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateReviewFieldValueDto)
+  fieldValues?: CreateReviewFieldValueDto[];
 }

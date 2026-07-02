@@ -9,6 +9,7 @@ import {
   Prisma,
   ReviewCommentSide,
   ReviewCommitStatus,
+  ReviewFieldType,
   ReviewStatus,
   UserRole,
   type User,
@@ -28,6 +29,7 @@ import { ReviewDeletionResponseDto } from "./dto/review-deletion-response.dto";
 import { ReviewDiffResponseDto } from "./dto/review-diff-file-response.dto";
 import { ReviewPreviewResponseDto } from "./dto/review-preview-response.dto";
 import { ReviewResponseDto } from "./dto/review-response.dto";
+import { SetReviewFieldValueDto } from "./dto/set-review-field-value.dto";
 import { UpdateReviewCommentMessageDto } from "./dto/update-review-comment-message.dto";
 import { UpdateReviewCommentDto } from "./dto/update-review-comment.dto";
 import { UpdateReviewDto } from "./dto/update-review.dto";
@@ -98,6 +100,9 @@ const reviewInclude = {
         include: { user: { select: userSummarySelect } },
       },
     },
+  },
+  fieldValues: {
+    orderBy: { createdAt: "asc" },
   },
 } satisfies Prisma.ReviewInclude;
 
@@ -227,6 +232,9 @@ export class ReviewsService {
       dto.reviewerUserIds ?? [],
       ownerId,
     );
+    const fieldValueCreates = await this.validatedFieldValueCreates(
+      dto.fieldValues,
+    );
     const gitwebMetadata = await this.fetchGitwebMetadata(dto.gitwebUrl);
     const commitCreates = await this.commitCreatesFromMetadata(
       gitwebMetadata,
@@ -275,6 +283,13 @@ export class ReviewsService {
             data: reviewerUserIds.map((userId) => ({ userId })),
           },
         },
+        ...(fieldValueCreates.length
+          ? {
+              fieldValues: {
+                createMany: { data: fieldValueCreates },
+              },
+            }
+          : {}),
       },
     });
     const review = await this.findReviewOrThrow(createdReview.id);
@@ -287,6 +302,109 @@ export class ReviewsService {
     const review = await this.findReviewOrThrow(reviewId);
     this.assertCanRead(user, review);
     return this.toResponse(review);
+  }
+
+  async setFieldValue(
+    user: User,
+    reviewId: string,
+    fieldId: string,
+    dto: SetReviewFieldValueDto,
+  ): Promise<ReviewResponseDto> {
+    const review = await this.findReviewOrThrow(reviewId);
+    this.assertIsOwner(user, review);
+
+    const field = await this.prisma.reviewFieldDefinition.findUnique({
+      where: { id: fieldId },
+    });
+    if (!field) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.NOT_FOUND,
+        "Review field not found",
+      );
+    }
+
+    const value = dto.value?.trim() ?? "";
+    if (!value) {
+      await this.prisma.reviewFieldValue.deleteMany({
+        where: { reviewId, fieldId },
+      });
+    } else {
+      this.assertValidFieldValue(field.type, value);
+      await this.prisma.reviewFieldValue.upsert({
+        where: { reviewId_fieldId: { reviewId, fieldId } },
+        create: { reviewId, fieldId, value },
+        update: { value },
+      });
+    }
+
+    return this.toResponse(await this.findReviewOrThrow(reviewId));
+  }
+
+  private async validatedFieldValueCreates(
+    fieldValues: CreateReviewDto["fieldValues"],
+  ): Promise<{ fieldId: string; value: string }[]> {
+    const creates = (fieldValues ?? [])
+      .map((fieldValue) => ({
+        fieldId: fieldValue.fieldId,
+        value: fieldValue.value.trim(),
+      }))
+      .filter((fieldValue) => fieldValue.value);
+    if (!creates.length) {
+      return [];
+    }
+
+    const fields = await this.prisma.reviewFieldDefinition.findMany({
+      where: { id: { in: creates.map((fieldValue) => fieldValue.fieldId) } },
+    });
+    for (const create of creates) {
+      const field = fields.find(
+        (currentField) => currentField.id === create.fieldId,
+      );
+      if (!field) {
+        throw new AppException(
+          ErrorCode.UNKNOWN_ERROR,
+          HttpStatus.NOT_FOUND,
+          "Review field not found",
+        );
+      }
+      this.assertValidFieldValue(field.type, create.value);
+    }
+
+    return creates;
+  }
+
+  private assertValidFieldValue(type: ReviewFieldType, value: string): void {
+    if (type === ReviewFieldType.NUMBER) {
+      if (!/^-?\d+(?:[.,]\d+)?$/.test(value)) {
+        throw new AppException(
+          ErrorCode.UNKNOWN_ERROR,
+          HttpStatus.BAD_REQUEST,
+          "Field value must be a number",
+        );
+      }
+      return;
+    }
+
+    if (type === ReviewFieldType.LINK || type === ReviewFieldType.IMAGE) {
+      let url: URL;
+      try {
+        url = new URL(value);
+      } catch {
+        throw new AppException(
+          ErrorCode.UNKNOWN_ERROR,
+          HttpStatus.BAD_REQUEST,
+          "Field value must be a valid URL",
+        );
+      }
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        throw new AppException(
+          ErrorCode.UNKNOWN_ERROR,
+          HttpStatus.BAD_REQUEST,
+          "Field value must be an http(s) URL",
+        );
+      }
+    }
   }
 
   async listComments(
@@ -774,7 +892,6 @@ export class ReviewsService {
 
     return this.toResponse(closedReview);
   }
-
   async update(
     user: User,
     reviewId: string,

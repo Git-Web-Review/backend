@@ -1,0 +1,25 @@
+model ReviewFieldDefinition {
+    id        String          @id @default(uuid())
+    name      String
+    type      ReviewFieldType
+    createdAt DateTime        @default(now()) @map("created_at")
+    updatedAt DateTime        @updatedAt @map("updated_at")
+
+    values ReviewFieldValue[]
+
+    @@map("review_field_definitions")
+}
+
+model ReviewFieldValue {
+    id        String                @id @default(uuid())
+    reviewId  String                @map("review_id")
+    review    Review                @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+    fieldId   String                @map("field_id")
+    field     ReviewFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+    value     String
+    createdAt DateTime              @default(now()) @map("created_at")
+    updatedAt DateTime              @updatedAt @map("updated_at")
+
+    @@unique([reviewId, fieldId])
+    @@map("review_field_values")
+}

@@ -8,6 +8,7 @@ import { HealthModule } from "./health/health.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { RedisModule } from "./redis/redis.module";
+import { ReviewFieldsModule } from "./review-fields/review-fields.module";
 import { ReviewsModule } from "./reviews/reviews.module";
 import { SettingsModule } from "./settings/settings.module";
 import { UsersModule } from "./users/users.module";
@@ -58,6 +59,7 @@ import { UsersModule } from "./users/users.module";
     CommitLogLinkRulesModule,
     AdminModule,
     UsersModule,
+    ReviewFieldsModule,
     ReviewsModule,
     SettingsModule,
     NotificationsModule,
