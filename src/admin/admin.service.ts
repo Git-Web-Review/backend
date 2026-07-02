@@ -6,11 +6,14 @@ import {
   UserRole,
   type AdminGrant,
   type User,
+  type UserSettings,
 } from "@prisma/client";
 import { AppException } from "../common/app.exception";
 import { ErrorCode } from "../common/error-code.enum";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { UpdateUserSettingsDto } from "../users/dto/update-user-settings.dto";
+import { UsersService } from "../users/users.service";
 import type { UserWithSettings } from "../users/users.service";
 import { AdminRemovalResponseDto } from "./dto/admin-removal-response.dto";
 import { AdminTextNotificationDto } from "./dto/admin-text-notification.dto";
@@ -24,6 +27,7 @@ export class AdminService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly notifications: NotificationsService,
+    private readonly usersService: UsersService,
   ) {}
 
   async onModuleInit() {
@@ -125,6 +129,22 @@ export class AdminService implements OnModuleInit {
     ]);
 
     return { email: normalizedEmail, removed: true };
+  }
+
+  async updateUserSettings(
+    userId: string,
+    dto: UpdateUserSettingsDto,
+  ): Promise<UserSettings> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new AppException(
+        ErrorCode.USER_NOT_FOUND,
+        HttpStatus.NOT_FOUND,
+        "User not found",
+      );
+    }
+
+    return this.usersService.updateSettings(userId, dto);
   }
 
   async sendTextNotification(

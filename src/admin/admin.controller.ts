@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   UseGuards,
 } from "@nestjs/common";
@@ -23,6 +24,8 @@ import {
   ApiValidationErrorResponse,
 } from "../common/swagger/api-error-responses";
 import { CurrentUserResponseDto } from "../users/dto/current-user-response.dto";
+import { UpdateUserSettingsDto } from "../users/dto/update-user-settings.dto";
+import { UserSettingsResponseDto } from "../users/dto/user-settings-response.dto";
 import { AdminService } from "./admin.service";
 import { AdminEmailDto } from "./dto/admin-email.dto";
 import { AdminGrantResponseDto } from "./dto/admin-grant-response.dto";
@@ -78,6 +81,20 @@ export class AdminController {
   })
   listUsers(): Promise<CurrentUserResponseDto[]> {
     return this.adminService.listUsers();
+  }
+
+  @Patch("users/:id/settings")
+  @ApiOperation({ summary: "Update a user's settings" })
+  @ApiOkResponse({
+    description: "User settings updated",
+    type: UserSettingsResponseDto,
+  })
+  @ApiValidationErrorResponse()
+  updateUserSettings(
+    @Param("id") id: string,
+    @Body() dto: UpdateUserSettingsDto,
+  ): Promise<UserSettingsResponseDto> {
+    return this.adminService.updateUserSettings(id, dto);
   }
 
   @Post("notifications/text")
