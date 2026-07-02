@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsUrl,
   IsUUID,
+  Matches,
 } from "class-validator";
 
 export class CreateReviewDto {
@@ -23,4 +24,16 @@ export class CreateReviewDto {
   @ArrayUnique()
   @IsUUID("4", { each: true })
   reviewerUserIds?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      "Commit hashes selected for the review (summary links). Defaults to all proposed commits.",
+    example: ["a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @Matches(/^[0-9a-f]{7,40}$/i, { each: true })
+  commitHashes?: string[];
 }

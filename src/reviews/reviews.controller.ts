@@ -234,7 +234,7 @@ export class ReviewsController {
   }
 
   @Patch(":id/ack")
-  @ApiOperation({ summary: "Acknowledge a review as reviewer" })
+  @ApiOperation({ summary: "Acknowledge all review commits as reviewer" })
   @ApiOkResponse({
     description: "Review acknowledged",
     type: ReviewResponseDto,
@@ -246,6 +246,53 @@ export class ReviewsController {
     @Param("id") id: string,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.acknowledge(user, id);
+  }
+
+  @Patch(":id/commits/:commitId/ack")
+  @ApiOperation({ summary: "Acknowledge a single review commit as reviewer" })
+  @ApiOkResponse({
+    description: "Review commit acknowledged",
+    type: ReviewResponseDto,
+  })
+  @ApiValidationErrorResponse()
+  @ApiNotFoundErrorResponse()
+  acknowledgeCommit(
+    @CurrentUser() user: User,
+    @Param("id") id: string,
+    @Param("commitId") commitId: string,
+  ): Promise<ReviewResponseDto> {
+    return this.reviewsService.acknowledgeCommit(user, id, commitId);
+  }
+
+  @Patch(":id/reviewed")
+  @ApiOperation({ summary: "Mark all review commits as reviewed" })
+  @ApiOkResponse({
+    description: "Review marked as reviewed",
+    type: ReviewResponseDto,
+  })
+  @ApiValidationErrorResponse()
+  @ApiNotFoundErrorResponse()
+  markReviewed(
+    @CurrentUser() user: User,
+    @Param("id") id: string,
+  ): Promise<ReviewResponseDto> {
+    return this.reviewsService.markReviewed(user, id);
+  }
+
+  @Patch(":id/commits/:commitId/reviewed")
+  @ApiOperation({ summary: "Mark a single review commit as reviewed" })
+  @ApiOkResponse({
+    description: "Review commit marked as reviewed",
+    type: ReviewResponseDto,
+  })
+  @ApiValidationErrorResponse()
+  @ApiNotFoundErrorResponse()
+  markCommitReviewed(
+    @CurrentUser() user: User,
+    @Param("id") id: string,
+    @Param("commitId") commitId: string,
+  ): Promise<ReviewResponseDto> {
+    return this.reviewsService.markCommitReviewed(user, id, commitId);
   }
 
   @Patch(":id/close")

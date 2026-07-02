@@ -1,0 +1,11 @@
+model ReviewCommitAck {
+    id             String       @id @default(uuid())
+    reviewCommitId String       @map("review_commit_id")
+    reviewCommit   ReviewCommit @relation(fields: [reviewCommitId], references: [id], onDelete: Cascade)
+    userId         String       @map("user_id")
+    user           User         @relation(fields: [userId], references: [id])
+    acknowledgedAt DateTime     @default(now()) @map("acknowledged_at")
+
+    @@unique([reviewCommitId, userId])
+    @@map("review_commit_acks")
+}

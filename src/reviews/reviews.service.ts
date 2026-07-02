@@ -7,6 +7,8 @@ import { HttpStatus, Injectable } from "@nestjs/common";
 import {
   NotificationType,
   Prisma,
+  ReviewCommentSide,
+  ReviewCommitStatus,
   ReviewStatus,
   UserRole,
   type User,
@@ -30,7 +32,18 @@ import { UpdateReviewCommentMessageDto } from "./dto/update-review-comment-messa
 import { UpdateReviewCommentDto } from "./dto/update-review-comment.dto";
 import { UpdateReviewDto } from "./dto/update-review.dto";
 
+type GitwebLinkKind = "COMMIT" | "SUMMARY";
+
+type GitCommitOption = {
+  hash: string;
+  title: string;
+  authorName: string;
+  authorEmail: string;
+  authoredAt: string | null;
+};
+
 type GitwebMetadata = {
+  linkKind: GitwebLinkKind;
   title: string | null;
   description: string | null;
   log: string | null;
@@ -40,6 +53,7 @@ type GitwebMetadata = {
   sourceBranch: string | null;
   sourceCommit: string | null;
   reviewerEmails: string[];
+  commitOptions: GitCommitOption[];
   gitDiff: ReviewDiffResponseDto;
   snapshot: Prisma.InputJsonObject | null;
   fetchedAt: Date | null;
@@ -76,7 +90,15 @@ const reviewInclude = {
     orderBy: { requestedAt: "asc" },
     include: { user: { select: userSummarySelect } },
   },
-  commits: { orderBy: { createdAt: "asc" } },
+  commits: {
+    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+    include: {
+      acks: {
+        orderBy: { acknowledgedAt: "asc" },
+        include: { user: { select: userSummarySelect } },
+      },
+    },
+  },
 } satisfies Prisma.ReviewInclude;
 
 const reviewCommentInclude = {
@@ -176,6 +198,8 @@ export class ReviewsService {
 
     return {
       gitwebUrl: dto.gitwebUrl,
+      linkKind: gitwebMetadata.linkKind,
+      commitOptions: gitwebMetadata.commitOptions,
       title: gitwebMetadata.title,
       description: this.truncate(
         gitwebMetadata.description ?? gitwebMetadata.log,
@@ -204,11 +228,25 @@ export class ReviewsService {
       ownerId,
     );
     const gitwebMetadata = await this.fetchGitwebMetadata(dto.gitwebUrl);
-    const title = gitwebMetadata.title;
-    const description = gitwebMetadata.description ?? gitwebMetadata.log;
-    const commit = gitwebMetadata.sourceCommit
-      ? this.commitFromMetadata(gitwebMetadata, title)
-      : null;
+    const commitCreates = await this.commitCreatesFromMetadata(
+      gitwebMetadata,
+      dto.commitHashes,
+    );
+    const commitCount = commitCreates.length;
+    const title =
+      gitwebMetadata.linkKind === "SUMMARY" && commitCount > 0
+        ? commitCount === 1
+          ? commitCreates[0].title
+          : `${gitwebMetadata.sourceBranch ?? "series"} (${commitCount} commits)`
+        : gitwebMetadata.title;
+    const description =
+      gitwebMetadata.linkKind === "SUMMARY" && commitCount > 1
+        ? commitCreates.map((commit) => `- ${commit.title}`).join("\n")
+        : (gitwebMetadata.description ?? gitwebMetadata.log);
+    const sourceCommit =
+      gitwebMetadata.linkKind === "SUMMARY"
+        ? (commitCreates.at(-1)?.hash ?? gitwebMetadata.sourceCommit)
+        : gitwebMetadata.sourceCommit;
 
     const createdReview = await this.prisma.review.create({
       data: {
@@ -217,7 +255,7 @@ export class ReviewsService {
         description: this.truncate(description, 4000),
         sourceProject: gitwebMetadata.sourceProject,
         sourceBranch: gitwebMetadata.sourceBranch,
-        sourceCommit: gitwebMetadata.sourceCommit,
+        sourceCommit,
         gitwebTitle: gitwebMetadata.title,
         gitwebLog: gitwebMetadata.log,
         gitwebRawHtml: gitwebMetadata.rawHtml,
@@ -225,10 +263,10 @@ export class ReviewsService {
         gitwebFetchedAt: gitwebMetadata.fetchedAt,
         gitwebFetchError: gitwebMetadata.fetchError,
         ownerId,
-        ...(commit
+        ...(commitCreates.length
           ? {
               commits: {
-                create: commit,
+                create: commitCreates,
               },
             }
           : {}),
@@ -289,7 +327,8 @@ export class ReviewsService {
         reviewId,
         commitHash: this.nullIfBlank(dto.commitHash),
         filePath: this.nullIfBlank(dto.filePath),
-        lineNumber: dto.lineNumber,
+        lineNumber: dto.lineNumber ?? null,
+        side: dto.side ?? ReviewCommentSide.AFTER,
         messages: {
           create: {
             fromId: user.id,
@@ -301,6 +340,7 @@ export class ReviewsService {
     });
 
     await this.updateReviewStatusAfterComment(user, review);
+    await this.notifyCommentReceived(review, comment, message, user.id);
 
     return this.toCommentResponses(comment)[0];
   }
@@ -352,6 +392,7 @@ export class ReviewsService {
     });
 
     await this.updateReviewStatusAfterComment(user, review);
+    await this.notifyCommentReceived(review, updatedComment, message, user.id);
 
     return this.toCommentResponses(updatedComment);
   }
@@ -544,25 +585,155 @@ export class ReviewsService {
     return this.toCommentResponses(updatedComment);
   }
 
+  async acknowledgeCommit(
+    user: User,
+    reviewId: string,
+    commitId: string,
+  ): Promise<ReviewResponseDto> {
+    const review = await this.findReviewOrThrow(reviewId);
+    this.assertIsReviewer(user, review);
+
+    if (review.status === ReviewStatus.CLOSED) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.BAD_REQUEST,
+        "Review is closed",
+      );
+    }
+
+    const commit = review.commits.find((item) => item.id === commitId);
+    if (!commit) {
+      throw new AppException(
+        ErrorCode.REVIEW_COMMIT_NOT_FOUND,
+        HttpStatus.NOT_FOUND,
+        "Review commit not found",
+      );
+    }
+
+    await this.prisma.reviewCommitAck.upsert({
+      where: {
+        reviewCommitId_userId: { reviewCommitId: commit.id, userId: user.id },
+      },
+      update: { acknowledgedAt: new Date() },
+      create: { reviewCommitId: commit.id, userId: user.id },
+    });
+
+    const updatedReview = await this.refreshReviewStatusFromComments(
+      reviewId,
+      user.id,
+    );
+
+    return this.toResponse(updatedReview);
+  }
+
   async acknowledge(user: User, reviewId: string): Promise<ReviewResponseDto> {
     const review = await this.findReviewOrThrow(reviewId);
     this.assertIsReviewer(user, review);
 
-    const openCommentCount = await this.prisma.reviewComment.count({
-      where: { reviewId, done: false },
-    });
-    if (openCommentCount > 0) {
+    if (review.status === ReviewStatus.CLOSED) {
       throw new AppException(
         ErrorCode.UNKNOWN_ERROR,
         HttpStatus.BAD_REQUEST,
-        "All comments must be done before acknowledging the review",
+        "Review is closed",
       );
     }
 
-    await this.prisma.reviewReviewer.update({
-      where: { reviewId_userId: { reviewId, userId: user.id } },
-      data: { acknowledgedAt: new Date() },
-    });
+    await this.prisma.$transaction([
+      ...review.commits.map((commit) =>
+        this.prisma.reviewCommitAck.upsert({
+          where: {
+            reviewCommitId_userId: {
+              reviewCommitId: commit.id,
+              userId: user.id,
+            },
+          },
+          update: { acknowledgedAt: new Date() },
+          create: { reviewCommitId: commit.id, userId: user.id },
+        }),
+      ),
+      this.prisma.reviewReviewer.update({
+        where: { reviewId_userId: { reviewId, userId: user.id } },
+        data: { acknowledgedAt: new Date() },
+      }),
+    ]);
+
+    const updatedReview = await this.refreshReviewStatusFromComments(
+      reviewId,
+      user.id,
+    );
+
+    return this.toResponse(updatedReview);
+  }
+
+  async markCommitReviewed(
+    user: User,
+    reviewId: string,
+    commitId: string,
+  ): Promise<ReviewResponseDto> {
+    const review = await this.findReviewOrThrow(reviewId);
+    this.assertIsReviewer(user, review);
+
+    if (review.status === ReviewStatus.CLOSED) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.BAD_REQUEST,
+        "Review is closed",
+      );
+    }
+
+    const commit = review.commits.find((item) => item.id === commitId);
+    if (!commit) {
+      throw new AppException(
+        ErrorCode.REVIEW_COMMIT_NOT_FOUND,
+        HttpStatus.NOT_FOUND,
+        "Review commit not found",
+      );
+    }
+
+    if (commit.status !== ReviewCommitStatus.ACKED) {
+      await this.prisma.reviewCommit.update({
+        where: { id: commit.id },
+        data: { status: ReviewCommitStatus.REVIEWED },
+      });
+      await this.notifyCommitsReviewed(review, [commit.title], user.id);
+    }
+
+    const updatedReview = await this.refreshReviewStatusFromComments(
+      reviewId,
+      user.id,
+    );
+
+    return this.toResponse(updatedReview);
+  }
+
+  async markReviewed(user: User, reviewId: string): Promise<ReviewResponseDto> {
+    const review = await this.findReviewOrThrow(reviewId);
+    this.assertIsReviewer(user, review);
+
+    if (review.status === ReviewStatus.CLOSED) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.BAD_REQUEST,
+        "Review is closed",
+      );
+    }
+
+    const pendingCommits = review.commits.filter(
+      (commit) =>
+        commit.status !== ReviewCommitStatus.ACKED &&
+        commit.status !== ReviewCommitStatus.REVIEWED,
+    );
+    if (pendingCommits.length > 0) {
+      await this.prisma.reviewCommit.updateMany({
+        where: { id: { in: pendingCommits.map((commit) => commit.id) } },
+        data: { status: ReviewCommitStatus.REVIEWED },
+      });
+      await this.notifyCommitsReviewed(
+        review,
+        pendingCommits.map((commit) => commit.title),
+        user.id,
+      );
+    }
 
     const updatedReview = await this.refreshReviewStatusFromComments(
       reviewId,
@@ -756,22 +927,7 @@ export class ReviewsService {
       return;
     }
 
-    const reviewerComment = review.reviewers.some(
-      (reviewer) => reviewer.userId === user.id,
-    );
-    if (review.status === ReviewStatus.PENDING && reviewerComment) {
-      await this.updateReviewStatus(
-        review.id,
-        ReviewStatus.IN_REVIEW,
-        review.status,
-        user.id,
-      );
-      return;
-    }
-
-    if (review.status === ReviewStatus.ACKED) {
-      await this.refreshReviewStatusFromComments(review.id, user.id);
-    }
+    await this.refreshReviewStatusFromComments(review.id, user.id);
   }
 
   private async refreshReviewStatusFromComments(
@@ -783,21 +939,64 @@ export class ReviewsService {
       return review;
     }
 
-    const openCommentCount = await this.prisma.reviewComment.count({
-      where: { reviewId, done: false },
+    const totalGroups = await this.prisma.reviewComment.groupBy({
+      by: ["commitHash"],
+      where: { reviewId },
+      _count: { _all: true },
     });
-    const acknowledged = review.reviewers.some(
-      (reviewer) => !!reviewer.acknowledgedAt,
+    const totalCounts = new Map(
+      totalGroups.map((group) => [group.commitHash, group._count._all]),
     );
-    const nextStatus =
-      acknowledged && openCommentCount === 0
-        ? ReviewStatus.ACKED
-        : review.status === ReviewStatus.ACKED
+
+    const nextCommitStatuses: ReviewCommitStatus[] = [];
+    for (const commit of review.commits) {
+      const totalCount = totalCounts.get(commit.hash) ?? 0;
+      const hasAck = commit.acks.length > 0;
+      const nextStatus = hasAck
+        ? ReviewCommitStatus.ACKED
+        : commit.status === ReviewCommitStatus.REVIEWED
+          ? ReviewCommitStatus.REVIEWED
+          : totalCount > 0
+            ? ReviewCommitStatus.IN_REVIEW
+            : ReviewCommitStatus.PENDING;
+      nextCommitStatuses.push(nextStatus);
+      if (nextStatus !== commit.status) {
+        await this.prisma.reviewCommit.update({
+          where: { id: commit.id },
+          data: { status: nextStatus },
+        });
+      }
+    }
+
+    const totalCommentCount = [...totalCounts.values()].reduce(
+      (sum, count) => sum + count,
+      0,
+    );
+    const allCommitsAcked =
+      nextCommitStatuses.length > 0 &&
+      nextCommitStatuses.every((status) => status === ReviewCommitStatus.ACKED);
+    const allCommitsReviewed =
+      nextCommitStatuses.length > 0 &&
+      nextCommitStatuses.every(
+        (status) =>
+          status === ReviewCommitStatus.ACKED ||
+          status === ReviewCommitStatus.REVIEWED,
+      );
+    const anyActivity =
+      totalCommentCount > 0 ||
+      nextCommitStatuses.some(
+        (status) => status !== ReviewCommitStatus.PENDING,
+      );
+    const nextStatus = allCommitsAcked
+      ? ReviewStatus.ACKED
+      : allCommitsReviewed
+        ? ReviewStatus.REVIEWED
+        : anyActivity
           ? ReviewStatus.IN_REVIEW
-          : review.status;
+          : ReviewStatus.PENDING;
 
     if (nextStatus === review.status) {
-      return review;
+      return this.findReviewOrThrow(reviewId);
     }
 
     return this.updateReviewStatus(
@@ -931,6 +1130,84 @@ export class ReviewsService {
     );
   }
 
+  private async notifyCommitsReviewed(
+    review: ReviewWithRelations,
+    commitTitles: string[],
+    actorUserId: string,
+  ): Promise<void> {
+    if (review.ownerId === actorUserId || commitTitles.length === 0) {
+      return;
+    }
+
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorUserId },
+      select: userSummarySelect,
+    });
+    const payload = {
+      reviewId: review.id,
+      title: review.title,
+      gitwebUrl: review.gitwebUrl,
+      ownerEmail: review.owner.email,
+      sourceProject: review.sourceProject,
+      sourceBranch: review.sourceBranch,
+      sourceCommit: review.sourceCommit,
+      gitwebTitle: review.gitwebTitle,
+      commitCount: commitTitles.length,
+      commitTitles: commitTitles.join("\n"),
+      actorEmail: actor?.email ?? null,
+      actorNickname: actor?.settings?.nickname ?? null,
+    } satisfies Prisma.InputJsonObject;
+
+    await this.notifications.createForUser(
+      review.ownerId,
+      NotificationType.COMMIT_REVIEWED,
+      payload,
+    );
+  }
+
+  private async notifyCommentReceived(
+    review: ReviewWithRelations,
+    comment: {
+      commitHash: string | null;
+      filePath: string | null;
+      lineNumber: number | null;
+    },
+    message: string,
+    actorUserId: string,
+  ): Promise<void> {
+    if (review.ownerId === actorUserId) {
+      return;
+    }
+
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorUserId },
+      select: userSummarySelect,
+    });
+    const payload = {
+      reviewId: review.id,
+      title: review.title,
+      gitwebUrl: review.gitwebUrl,
+      ownerEmail: review.owner.email,
+      sourceProject: review.sourceProject,
+      sourceBranch: review.sourceBranch,
+      sourceCommit: review.sourceCommit,
+      gitwebTitle: review.gitwebTitle,
+      commitHash: comment.commitHash,
+      filePath: comment.filePath,
+      lineNumber: comment.lineNumber,
+      commentExcerpt:
+        message.length > 300 ? `${message.slice(0, 300)}...` : message,
+      actorEmail: actor?.email ?? null,
+      actorNickname: actor?.settings?.nickname ?? null,
+    } satisfies Prisma.InputJsonObject;
+
+    await this.notifications.createForUser(
+      review.ownerId,
+      NotificationType.COMMENT_RECEIVED,
+      payload,
+    );
+  }
+
   private async notifyReviewStatusChanged(
     review: ReviewWithRelations,
     previousStatus: ReviewStatus,
@@ -986,6 +1263,14 @@ export class ReviewsService {
       gitwebRawHtml: null,
       gitDiff: this.gitDiffFromSnapshot(review.gitwebSnapshot),
       owner: this.toUserSummary(review.owner),
+      commits: review.commits.map((commit) => ({
+        ...commit,
+        gitDiff: this.gitDiffFromJson(commit.gitDiff),
+        acks: commit.acks.map((ack) => ({
+          ...ack,
+          user: this.toUserSummary(ack.user),
+        })),
+      })),
       reviewers: review.reviewers.map((reviewer) => ({
         ...reviewer,
         user: this.toUserSummary(reviewer.user),
@@ -1003,6 +1288,7 @@ export class ReviewsService {
       commitHash: comment.commitHash,
       filePath: comment.filePath,
       lineNumber: comment.lineNumber,
+      side: comment.side,
       author: this.toUserSummary(message.from),
       done: comment.done,
       doneBy: comment.doneBy ? this.toUserSummary(comment.doneBy) : null,
@@ -1036,7 +1322,44 @@ export class ReviewsService {
     const baseMetadata = this.metadataFromUrl(gitwebUrl);
 
     try {
-      if (!baseMetadata.remoteUrl || !baseMetadata.sourceCommit) {
+      if (!baseMetadata.remoteUrl) {
+        throw new Error("Missing git remote URL in git-web URL");
+      }
+
+      if (baseMetadata.linkKind === "SUMMARY") {
+        const branch = baseMetadata.sourceBranch ?? "master";
+        const { options, reviewerEmails } =
+          await this.fetchGitBranchCommitOptions(
+            baseMetadata.remoteUrl,
+            branch,
+          );
+        const metadata = {
+          ...baseMetadata,
+          title: options.length
+            ? `${branch} (${options.length} commits)`
+            : baseMetadata.title,
+          log: this.truncate(
+            options.map((option) => option.title).join("\n"),
+            20000,
+          ),
+          rawHtml: null,
+          sourceCommit: options[0]?.hash ?? null,
+          reviewerEmails,
+          commitOptions: options,
+          gitDiff: { files: [] },
+          fetchedAt: new Date(),
+          fetchError: options.length
+            ? null
+            : `No commits to review on branch "${branch}": it has no commits ahead of origin/master. Push your local commits to this branch, then retry.`,
+        } satisfies Omit<GitwebMetadata, "snapshot">;
+
+        return {
+          ...metadata,
+          snapshot: this.snapshotFromMetadata(metadata, null),
+        };
+      }
+
+      if (!baseMetadata.sourceCommit) {
         throw new Error("Missing git remote URL or commit hash in git-web URL");
       }
 
@@ -1076,17 +1399,26 @@ export class ReviewsService {
   private metadataFromUrl(gitwebUrl: string): GitwebMetadata {
     const url = new URL(gitwebUrl);
     const params = this.gitwebParams(url);
+    const action = params.get("a")?.toLowerCase() ?? null;
+    const linkKind: GitwebLinkKind =
+      action && ["summary", "shortlog", "log", "heads", "tree"].includes(action)
+        ? "SUMMARY"
+        : "COMMIT";
     const project =
       params.get("p") ??
       params.get("project") ??
       this.nullIfBlank(url.pathname.split("/").filter(Boolean)[0]);
-    const sourceCommit =
+    const head =
       params.get("h") ??
       params.get("id") ??
       params.get("commit") ??
       this.nullIfBlank(url.pathname.split("/").filter(Boolean).at(-1));
+    const branchParam = this.nullIfBlank(
+      params.get("hb") ?? params.get("branch"),
+    );
 
     return {
+      linkKind,
       title: null,
       description: null,
       log: null,
@@ -1094,9 +1426,12 @@ export class ReviewsService {
       remoteUrl: project ? `git://${url.host}/${project}` : null,
       sourceProject: this.nullIfBlank(project),
       sourceBranch:
-        this.nullIfBlank(params.get("hb") ?? params.get("branch")) ?? "master",
-      sourceCommit: this.nullIfBlank(sourceCommit),
+        linkKind === "SUMMARY"
+          ? (this.nullIfBlank(head) ?? branchParam ?? "master")
+          : (branchParam ?? "master"),
+      sourceCommit: linkKind === "SUMMARY" ? null : this.nullIfBlank(head),
       reviewerEmails: [],
+      commitOptions: [],
       gitDiff: { files: [] },
       snapshot: null,
       fetchedAt: null,
@@ -1172,6 +1507,142 @@ export class ReviewsService {
       authorName: authorName.trim(),
       authorEmail: authorEmail.trim(),
       gitDiff: { files: this.parseGitPatch(patch) },
+    };
+  }
+
+  private async fetchGitBranchCommitOptions(
+    remoteUrl: string,
+    branch: string,
+  ): Promise<{ options: GitCommitOption[]; reviewerEmails: string[] }> {
+    const repoPath = await this.ensureGitCache(remoteUrl);
+
+    await this.runGit([
+      "-C",
+      repoPath,
+      "fetch",
+      "--depth=50",
+      remoteUrl,
+      `+${branch}:refs/gwr/head`,
+    ]);
+
+    let upstreamRef: string | null = "refs/gwr/origin";
+    try {
+      await this.runGit([
+        "-C",
+        repoPath,
+        "fetch",
+        "--depth=50",
+        remoteUrl,
+        "+refs/remotes/origin/master:refs/gwr/origin",
+      ]);
+    } catch {
+      upstreamRef = null;
+    }
+
+    const logOutput = await this.runGit([
+      "-C",
+      repoPath,
+      "log",
+      "--max-count=20",
+      "--format=%H%x00%an%x00%ae%x00%aI%x00%s%x00%b%x1e",
+      upstreamRef ? `${upstreamRef}..refs/gwr/head` : "refs/gwr/head",
+    ]);
+
+    const options: GitCommitOption[] = [];
+    const reviewerEmails = new Set<string>();
+    for (const record of logOutput.split("\x1e")) {
+      const [hash, authorName, authorEmail, authoredAt, title, body = ""] =
+        record.replace(/^\n/, "").split("\0");
+      if (!hash?.trim()) {
+        continue;
+      }
+      options.push({
+        hash: hash.trim(),
+        title: title?.trim() ?? hash.trim(),
+        authorName: authorName?.trim() ?? "",
+        authorEmail: authorEmail?.trim() ?? "",
+        authoredAt: authoredAt?.trim() || null,
+      });
+      for (const email of this.extractReviewerEmails(body)) {
+        reviewerEmails.add(email);
+      }
+    }
+
+    return { options, reviewerEmails: [...reviewerEmails] };
+  }
+
+  private async commitCreatesFromMetadata(
+    metadata: GitwebMetadata,
+    selectedHashes?: string[],
+  ): Promise<Prisma.ReviewCommitCreateWithoutReviewInput[]> {
+    if (metadata.linkKind === "SUMMARY") {
+      if (!metadata.remoteUrl || metadata.commitOptions.length === 0) {
+        return [];
+      }
+
+      const normalizedSelection = selectedHashes?.map((hash) =>
+        hash.toLowerCase(),
+      );
+      const selected = normalizedSelection?.length
+        ? metadata.commitOptions.filter((option) =>
+            normalizedSelection.some((hash) =>
+              option.hash.toLowerCase().startsWith(hash),
+            ),
+          )
+        : metadata.commitOptions;
+      if (selected.length === 0) {
+        throw new AppException(
+          ErrorCode.UNKNOWN_ERROR,
+          HttpStatus.BAD_REQUEST,
+          "No matching commits selected for the review",
+        );
+      }
+
+      const orderedOldestFirst = [...selected].reverse();
+      const creates: Prisma.ReviewCommitCreateWithoutReviewInput[] = [];
+      for (const [index, option] of orderedOldestFirst.entries()) {
+        const commitMetadata = await this.fetchGitCommitMetadata(
+          metadata.remoteUrl,
+          option.hash,
+        );
+        creates.push(this.commitCreateFromGitMetadata(commitMetadata, index));
+      }
+      return creates;
+    }
+
+    if (!metadata.sourceCommit) {
+      return [];
+    }
+
+    return [
+      {
+        ...this.commitFromMetadata(metadata, metadata.title),
+        position: 0,
+        gitDiff: metadata.gitDiff as unknown as Prisma.InputJsonObject,
+      },
+    ];
+  }
+
+  private commitCreateFromGitMetadata(
+    metadata: GitCommitMetadata,
+    position: number,
+  ): Prisma.ReviewCommitCreateWithoutReviewInput {
+    const signedOffBy = this.signedOffByFromLog(metadata.message);
+
+    return {
+      hash: metadata.hash,
+      title: metadata.title,
+      position,
+      signedOffByName:
+        signedOffBy.name !== "unknown" ? signedOffBy.name : metadata.authorName,
+      signedOffByEmail: signedOffBy.email || metadata.authorEmail,
+      fixesHash: this.firstMatch(
+        metadata.message,
+        /Fixes:\s*([0-9a-f]{7,40})/i,
+      ),
+      fixesTitle: null,
+      rawMessage: this.truncate(metadata.message, 20000) ?? metadata.title,
+      gitDiff: metadata.gitDiff as unknown as Prisma.InputJsonObject,
     };
   }
 
@@ -1345,7 +1816,14 @@ export class ReviewsService {
       return { files: [] };
     }
 
-    const gitDiff = (snapshot as Record<string, unknown>).gitDiff;
+    return this.gitDiffFromJson(
+      (snapshot as Record<string, unknown>).gitDiff as Prisma.JsonValue,
+    );
+  }
+
+  private gitDiffFromJson(
+    gitDiff: Prisma.JsonValue | null,
+  ): ReviewDiffResponseDto {
     if (!gitDiff || typeof gitDiff !== "object" || Array.isArray(gitDiff)) {
       return { files: [] };
     }

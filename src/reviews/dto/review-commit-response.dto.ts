@@ -1,7 +1,26 @@
 import { ApiProperty } from "@nestjs/swagger";
-import type { ReviewCommit } from "@prisma/client";
+import { ReviewCommitStatus } from "@prisma/client";
+import { ReviewDiffResponseDto } from "./review-diff-file-response.dto";
+import { ReviewUserSummaryResponseDto } from "./review-user-summary-response.dto";
 
-export class ReviewCommitResponseDto implements ReviewCommit {
+export class ReviewCommitAckResponseDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  reviewCommitId!: string;
+
+  @ApiProperty()
+  userId!: string;
+
+  @ApiProperty()
+  acknowledgedAt!: Date;
+
+  @ApiProperty({ type: () => ReviewUserSummaryResponseDto })
+  user!: ReviewUserSummaryResponseDto;
+}
+
+export class ReviewCommitResponseDto {
   @ApiProperty()
   id!: string;
 
@@ -13,6 +32,12 @@ export class ReviewCommitResponseDto implements ReviewCommit {
 
   @ApiProperty()
   title!: string;
+
+  @ApiProperty({ enum: ReviewCommitStatus })
+  status!: ReviewCommitStatus;
+
+  @ApiProperty()
+  position!: number;
 
   @ApiProperty()
   signedOffByName!: string;
@@ -28,6 +53,12 @@ export class ReviewCommitResponseDto implements ReviewCommit {
 
   @ApiProperty()
   rawMessage!: string;
+
+  @ApiProperty({ type: () => ReviewDiffResponseDto })
+  gitDiff!: ReviewDiffResponseDto;
+
+  @ApiProperty({ type: () => [ReviewCommitAckResponseDto] })
+  acks!: ReviewCommitAckResponseDto[];
 
   @ApiProperty()
   createdAt!: Date;

@@ -2,9 +2,32 @@ import { ApiProperty } from "@nestjs/swagger";
 import { ReviewDiffResponseDto } from "./review-diff-file-response.dto";
 import { ReviewUserSummaryResponseDto } from "./review-user-summary-response.dto";
 
+export class ReviewPreviewCommitOptionDto {
+  @ApiProperty()
+  hash!: string;
+
+  @ApiProperty()
+  title!: string;
+
+  @ApiProperty()
+  authorName!: string;
+
+  @ApiProperty()
+  authorEmail!: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  authoredAt!: string | null;
+}
+
 export class ReviewPreviewResponseDto {
   @ApiProperty()
   gitwebUrl!: string;
+
+  @ApiProperty({ enum: ["COMMIT", "SUMMARY"] })
+  linkKind!: "COMMIT" | "SUMMARY";
+
+  @ApiProperty({ type: () => [ReviewPreviewCommitOptionDto] })
+  commitOptions!: ReviewPreviewCommitOptionDto[];
 
   @ApiProperty({ type: String, nullable: true })
   title!: string | null;

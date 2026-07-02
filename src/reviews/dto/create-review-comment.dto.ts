@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsInt, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from "class-validator";
+import { ReviewCommentSide } from "@prisma/client";
 
 export class CreateReviewCommentDto {
   @ApiPropertyOptional({ type: String, nullable: true })
@@ -14,10 +22,16 @@ export class CreateReviewCommentDto {
   @MaxLength(1000)
   filePath?: string | null;
 
-  @ApiProperty({ example: 42 })
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 42 })
+  @IsOptional()
   @IsInt()
   @Min(1)
-  lineNumber!: number;
+  lineNumber?: number | null;
+
+  @ApiPropertyOptional({ enum: ReviewCommentSide })
+  @IsOptional()
+  @IsEnum(ReviewCommentSide)
+  side?: ReviewCommentSide;
 
   @ApiProperty({ example: "This should handle the error path too." })
   @IsString()

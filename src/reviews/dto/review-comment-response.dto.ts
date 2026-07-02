@@ -1,4 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
+import { ReviewCommentSide } from "@prisma/client";
 import { ReviewUserSummaryResponseDto } from "./review-user-summary-response.dto";
 
 export class ReviewCommentResponseDto {
@@ -17,8 +18,11 @@ export class ReviewCommentResponseDto {
   @ApiProperty({ type: String, nullable: true })
   filePath!: string | null;
 
-  @ApiProperty()
-  lineNumber!: number;
+  @ApiProperty({ type: Number, nullable: true })
+  lineNumber!: number | null;
+
+  @ApiProperty({ enum: ReviewCommentSide })
+  side!: ReviewCommentSide;
 
   @ApiProperty({ type: () => ReviewUserSummaryResponseDto })
   author!: ReviewUserSummaryResponseDto;

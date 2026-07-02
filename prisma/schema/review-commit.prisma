@@ -1,16 +1,22 @@
 model ReviewCommit {
-    id               String   @id @default(uuid())
-    reviewId         String   @map("review_id")
-    review           Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+    id               String             @id @default(uuid())
+    reviewId         String             @map("review_id")
+    review           Review             @relation(fields: [reviewId], references: [id], onDelete: Cascade)
     hash             String
     title            String
-    signedOffByName  String   @map("signed_off_by_name")
-    signedOffByEmail String   @map("signed_off_by_email")
-    fixesHash        String?  @map("fixes_hash")
-    fixesTitle       String?  @map("fixes_title")
-    rawMessage       String   @map("raw_message")
-    createdAt        DateTime @default(now()) @map("created_at")
+    status           ReviewCommitStatus @default(PENDING)
+    position         Int                @default(0)
+    signedOffByName  String             @map("signed_off_by_name")
+    signedOffByEmail String             @map("signed_off_by_email")
+    fixesHash        String?            @map("fixes_hash")
+    fixesTitle       String?            @map("fixes_title")
+    rawMessage       String             @map("raw_message")
+    gitDiff          Json?              @map("git_diff")
+    createdAt        DateTime           @default(now()) @map("created_at")
+
+    acks ReviewCommitAck[]
 
     @@unique([reviewId, hash])
+    @@index([reviewId, position])
     @@map("review_commits")
 }

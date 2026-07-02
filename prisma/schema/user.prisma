@@ -12,6 +12,7 @@ model User {
     notifications    Notification[]
     ownedReviews     Review[]               @relation("review_owner")
     reviewRequests   ReviewReviewer[]
+    commitAcks       ReviewCommitAck[]
     commentsSent     ReviewCommentMessage[] @relation("comment_from")
     commentsReceived ReviewCommentMessage[] @relation("comment_to")
     commentsDone     ReviewComment[]        @relation("comment_done_by")

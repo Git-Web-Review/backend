@@ -13,11 +13,25 @@ enum NotificationType {
     REVIEW_PENDING
     REVIEW_STATUS_CHANGED
     COMMENT_RECEIVED
+    COMMIT_REVIEWED
 }
 
 enum ReviewStatus {
     PENDING
     IN_REVIEW
+    REVIEWED
     ACKED
     CLOSED
+}
+
+enum ReviewCommitStatus {
+    PENDING
+    IN_REVIEW
+    REVIEWED
+    ACKED
+}
+
+enum ReviewCommentSide {
+    BEFORE
+    AFTER
 }
