@@ -168,6 +168,9 @@ export class UsersService {
           mailNotificationsEnabled: dto.mailNotificationsEnabled,
           ircNotificationsEnabled: dto.ircNotificationsEnabled,
           ircNickname,
+          notificationPreferences: this.notificationPreferencesJson(
+            dto.notificationPreferences,
+          ),
         },
         create: {
           userId,
@@ -177,9 +180,21 @@ export class UsersService {
           mailNotificationsEnabled: dto.mailNotificationsEnabled ?? false,
           ircNotificationsEnabled: dto.ircNotificationsEnabled ?? false,
           ircNickname,
+          notificationPreferences:
+            this.notificationPreferencesJson(dto.notificationPreferences) ?? {},
         },
       });
     });
+  }
+
+  private notificationPreferencesJson(
+    preferences: UpdateUserSettingsDto["notificationPreferences"],
+  ): Prisma.InputJsonObject | undefined {
+    if (preferences === undefined) {
+      return undefined;
+    }
+
+    return JSON.parse(JSON.stringify(preferences)) as Prisma.InputJsonObject;
   }
 
   async saveProfileImage(

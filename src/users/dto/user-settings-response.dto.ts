@@ -1,5 +1,5 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { UserLocale, type UserSettings } from "@prisma/client";
+import { Prisma, UserLocale, type UserSettings } from "@prisma/client";
 
 export class UserSettingsResponseDto implements UserSettings {
   @ApiProperty()
@@ -22,4 +22,7 @@ export class UserSettingsResponseDto implements UserSettings {
 
   @ApiProperty({ type: String, nullable: true })
   ircNickname!: string | null;
+
+  @ApiProperty({ type: Object })
+  notificationPreferences!: Prisma.JsonValue;
 }

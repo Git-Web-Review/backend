@@ -5,6 +5,10 @@ import { ErrorCode } from "../common/error-code.enum";
 import { PrismaService } from "../prisma/prisma.service";
 import { RedisService } from "../redis/redis.service";
 import { ListNotificationsQueryDto } from "./dto/list-notifications-query.dto";
+import {
+  notificationCategory,
+  notificationCategoryEnabled,
+} from "./notification-preferences";
 
 const USER_NOTIFICATION_CHANNEL_PREFIX = "notifications:user";
 const IRC_NOTIFICATION_CHANNEL = "notifications:irc";
@@ -94,21 +98,37 @@ export class NotificationsService {
       include: { user: { include: { settings: true } } },
     });
 
+    const settings = notification.user.settings;
+    const category = notificationCategory(
+      notification.type,
+      notification.payload,
+    );
+    const mailEnabled =
+      (settings?.mailNotificationsEnabled ?? false) &&
+      notificationCategoryEnabled(
+        settings?.notificationPreferences,
+        "mail",
+        category,
+      );
+    const ircEnabled =
+      (settings?.ircNotificationsEnabled ?? false) &&
+      notificationCategoryEnabled(
+        settings?.notificationPreferences,
+        "irc",
+        category,
+      );
+
     const event = {
       type: notification.type,
       notificationId: notification.id,
       user: {
         id: notification.user.id,
         email: notification.user.email,
-        nickname: notification.user.settings?.nickname ?? null,
-        locale: notification.user.settings?.locale ?? "FR",
-        ircNotificationsEnabled:
-          notification.user.settings?.ircNotificationsEnabled ?? false,
-        ircNickname: notification.user.settings?.ircNotificationsEnabled
-          ? (notification.user.settings?.ircNickname ?? null)
-          : null,
-        mailNotificationsEnabled:
-          notification.user.settings?.mailNotificationsEnabled ?? false,
+        nickname: settings?.nickname ?? null,
+        locale: settings?.locale ?? "FR",
+        ircNotificationsEnabled: ircEnabled,
+        ircNickname: ircEnabled ? (settings?.ircNickname ?? null) : null,
+        mailNotificationsEnabled: mailEnabled,
       },
       payload: notification.payload,
       createdAt: notification.createdAt.toISOString(),

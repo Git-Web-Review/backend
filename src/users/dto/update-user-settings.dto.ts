@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { UserLocale } from "@prisma/client";
+import { Type } from "class-transformer";
 import {
   IsBoolean,
   IsEnum,
@@ -7,7 +8,54 @@ import {
   IsString,
   IsUrl,
   MaxLength,
+  ValidateNested,
 } from "class-validator";
+
+export class NotificationMediumPreferencesDto {
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  reviewStarted?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  reviewPending?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  reviewDone?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  reviewAcked?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  reviewClosed?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  commentReceived?: boolean;
+}
+
+export class NotificationPreferencesDto {
+  @ApiPropertyOptional({ type: NotificationMediumPreferencesDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationMediumPreferencesDto)
+  mail?: NotificationMediumPreferencesDto;
+
+  @ApiPropertyOptional({ type: NotificationMediumPreferencesDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationMediumPreferencesDto)
+  irc?: NotificationMediumPreferencesDto;
+}
 
 export class UpdateUserSettingsDto {
   @ApiPropertyOptional({ type: String, nullable: true, example: "lea" })
@@ -61,4 +109,10 @@ export class UpdateUserSettingsDto {
   @IsString()
   @MaxLength(80)
   ircNickname?: string | null;
+
+  @ApiPropertyOptional({ type: NotificationPreferencesDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationPreferencesDto)
+  notificationPreferences?: NotificationPreferencesDto;
 }

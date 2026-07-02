@@ -8,6 +8,7 @@ model UserSettings {
     mailNotificationsEnabled Boolean    @default(false) @map("mail_notifications_enabled")
     ircNotificationsEnabled  Boolean    @default(false) @map("irc_notifications_enabled")
     ircNickname              String?    @map("irc_nickname")
+    notificationPreferences  Json       @default("{}") @map("notification_preferences")
 
     @@map("user_settings")
 }
