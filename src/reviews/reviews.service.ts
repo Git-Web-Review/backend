@@ -32,6 +32,10 @@ import { ReviewPreviewResponseDto } from "./dto/review-preview-response.dto";
 import { ReviewResponseDto } from "./dto/review-response.dto";
 import { ReviewSyncPreviewResponseDto } from "./dto/review-sync-preview-response.dto";
 import { SetReviewFieldValueDto } from "./dto/set-review-field-value.dto";
+import {
+  FileViewedResponseDto,
+  SetFileViewedDto,
+} from "./dto/set-file-viewed.dto";
 import { SyncReviewDto } from "./dto/sync-review.dto";
 import { UpdateReviewCommentMessageDto } from "./dto/update-review-comment-message.dto";
 import { UpdateReviewCommentDto } from "./dto/update-review-comment.dto";
@@ -124,6 +128,9 @@ const reviewInclude = {
       acks: {
         orderBy: { acknowledgedAt: "asc" },
         include: { user: { select: userSummarySelect } },
+      },
+      fileViews: {
+        orderBy: { createdAt: "asc" },
       },
     },
   },
@@ -770,6 +777,64 @@ export class ReviewsService {
     return this.toResponse(updatedReview);
   }
 
+  async setFileViewed(
+    user: User,
+    reviewId: string,
+    commitId: string,
+    dto: SetFileViewedDto,
+  ): Promise<FileViewedResponseDto> {
+    const review = await this.findReviewOrThrow(reviewId);
+    this.assertCanResolveComment(user, review);
+
+    const commit = review.commits.find((item) => item.id === commitId);
+    if (!commit) {
+      throw new AppException(
+        ErrorCode.REVIEW_COMMIT_NOT_FOUND,
+        HttpStatus.NOT_FOUND,
+        "Review commit not found",
+      );
+    }
+
+    const fileExists = this.gitDiffFromJson(commit.gitDiff).files.some(
+      (file) => file.path === dto.filePath,
+    );
+    if (!fileExists) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.BAD_REQUEST,
+        "File not found in the commit diff",
+      );
+    }
+
+    if (dto.viewed) {
+      await this.prisma.reviewFileView.upsert({
+        where: {
+          reviewCommitId_userId_filePath: {
+            reviewCommitId: commit.id,
+            userId: user.id,
+            filePath: dto.filePath,
+          },
+        },
+        update: {},
+        create: {
+          reviewCommitId: commit.id,
+          userId: user.id,
+          filePath: dto.filePath,
+        },
+      });
+    } else {
+      await this.prisma.reviewFileView.deleteMany({
+        where: {
+          reviewCommitId: commit.id,
+          userId: user.id,
+          filePath: dto.filePath,
+        },
+      });
+    }
+
+    return { commitId: commit.id, filePath: dto.filePath, viewed: dto.viewed };
+  }
+
   async acknowledge(user: User, reviewId: string): Promise<ReviewResponseDto> {
     const review = await this.findReviewOrThrow(reviewId);
     this.assertIsReviewer(user, review);
@@ -1209,6 +1274,19 @@ export class ReviewsService {
               in: modifiedWithAcks.map((entry) => entry.previous!.id),
             },
           },
+        });
+      }
+
+      const modifiedCommitIds = plan.entries
+        .filter(
+          (entry) =>
+            entry.changeKind === ReviewCommitChangeKind.MODIFIED &&
+            entry.previous,
+        )
+        .map((entry) => entry.previous!.id);
+      if (modifiedCommitIds.length) {
+        await tx.reviewFileView.deleteMany({
+          where: { reviewCommitId: { in: modifiedCommitIds } },
         });
       }
 

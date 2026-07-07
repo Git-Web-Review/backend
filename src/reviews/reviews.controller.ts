@@ -37,6 +37,10 @@ import { ReviewPreviewResponseDto } from "./dto/review-preview-response.dto";
 import { ReviewResponseDto } from "./dto/review-response.dto";
 import { ReviewSyncPreviewResponseDto } from "./dto/review-sync-preview-response.dto";
 import { SetReviewFieldValueDto } from "./dto/set-review-field-value.dto";
+import {
+  FileViewedResponseDto,
+  SetFileViewedDto,
+} from "./dto/set-file-viewed.dto";
 import { SyncReviewDto } from "./dto/sync-review.dto";
 import { UpdateReviewCommentMessageDto } from "./dto/update-review-comment-message.dto";
 import { UpdateReviewCommentDto } from "./dto/update-review-comment.dto";
@@ -318,6 +322,25 @@ export class ReviewsController {
     @Param("commitId") commitId: string,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.acknowledgeCommit(user, id, commitId);
+  }
+
+  @Put(":id/commits/:commitId/files/viewed")
+  @ApiOperation({
+    summary: "Mark a commit diff file as viewed or not viewed",
+  })
+  @ApiOkResponse({
+    description: "File view state updated",
+    type: FileViewedResponseDto,
+  })
+  @ApiValidationErrorResponse()
+  @ApiNotFoundErrorResponse()
+  setFileViewed(
+    @CurrentUser() user: User,
+    @Param("id") id: string,
+    @Param("commitId") commitId: string,
+    @Body() dto: SetFileViewedDto,
+  ): Promise<FileViewedResponseDto> {
+    return this.reviewsService.setFileViewed(user, id, commitId, dto);
   }
 
   @Patch(":id/reviewed")

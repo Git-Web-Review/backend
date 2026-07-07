@@ -13,6 +13,7 @@ model User {
     ownedReviews     Review[]               @relation("review_owner")
     reviewRequests   ReviewReviewer[]
     commitAcks       ReviewCommitAck[]
+    fileViews        ReviewFileView[]
     commentsSent     ReviewCommentMessage[] @relation("comment_from")
     commentsReceived ReviewCommentMessage[] @relation("comment_to")
     commentsDone     ReviewComment[]        @relation("comment_done_by")

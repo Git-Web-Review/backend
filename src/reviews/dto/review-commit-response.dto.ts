@@ -20,6 +20,23 @@ export class ReviewCommitAckResponseDto {
   user!: ReviewUserSummaryResponseDto;
 }
 
+export class ReviewFileViewResponseDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  reviewCommitId!: string;
+
+  @ApiProperty()
+  userId!: string;
+
+  @ApiProperty()
+  filePath!: string;
+
+  @ApiProperty()
+  createdAt!: Date;
+}
+
 export class ReviewCommitResponseDto {
   @ApiProperty()
   id!: string;
@@ -65,6 +82,9 @@ export class ReviewCommitResponseDto {
 
   @ApiProperty({ type: () => [ReviewCommitAckResponseDto] })
   acks!: ReviewCommitAckResponseDto[];
+
+  @ApiProperty({ type: () => [ReviewFileViewResponseDto] })
+  fileViews!: ReviewFileViewResponseDto[];
 
   @ApiProperty()
   createdAt!: Date;

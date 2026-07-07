@@ -16,7 +16,8 @@ model ReviewCommit {
     gitDiff          Json?                   @map("git_diff")
     createdAt        DateTime                @default(now()) @map("created_at")
 
-    acks ReviewCommitAck[]
+    acks      ReviewCommitAck[]
+    fileViews ReviewFileView[]
 
     @@unique([reviewId, hash])
     @@index([reviewId, position])

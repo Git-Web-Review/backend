@@ -1,0 +1,12 @@
+model ReviewFileView {
+    id             String       @id @default(uuid())
+    reviewCommitId String       @map("review_commit_id")
+    reviewCommit   ReviewCommit @relation(fields: [reviewCommitId], references: [id], onDelete: Cascade)
+    userId         String       @map("user_id")
+    user           User         @relation(fields: [userId], references: [id])
+    filePath       String       @map("file_path")
+    createdAt      DateTime     @default(now()) @map("created_at")
+
+    @@unique([reviewCommitId, userId, filePath])
+    @@map("review_file_views")
+}
