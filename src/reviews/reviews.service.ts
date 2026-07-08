@@ -1301,6 +1301,7 @@ export class ReviewsService {
         where: { id: reviewId },
         data: {
           version: review.version + 1,
+          sourceBranch: plan.branch,
           sourceCommit: plan.entries.at(-1)?.hash ?? review.sourceCommit,
           title: nextTitle,
           description: this.truncate(nextDescription, 4000),
@@ -1330,17 +1331,115 @@ export class ReviewsService {
     }
   }
 
+  /**
+   * Resolves the branch to synchronize from. Reviews created from a commit
+   * link store a "master" fallback branch, so the stored value cannot be
+   * trusted blindly: prefer the remote branch whose tip currently is (or
+   * recently was) one of the review commits.
+   */
+  private async resolveSyncBranch(
+    review: ReviewWithRelations,
+    remoteUrl: string,
+  ): Promise<string | null> {
+    const reviewHashes = new Set(review.commits.map((commit) => commit.hash));
+    if (review.sourceCommit) {
+      reviewHashes.add(review.sourceCommit);
+    }
+
+    let refs: { hash: string; branch: string }[] = [];
+    try {
+      const lsRemote = await this.runGit(["ls-remote", "--heads", remoteUrl]);
+      refs = lsRemote
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const [hash, ref] = line.split(/\s+/);
+          return {
+            hash: hash ?? "",
+            branch: (ref ?? "").replace(/^refs\/heads\//, ""),
+          };
+        })
+        .filter((ref) => ref.hash && ref.branch);
+    } catch {
+      refs = [];
+    }
+
+    // Best case: a branch tip is exactly one of the review commits.
+    const tipMatch = refs.find((ref) => reviewHashes.has(ref.hash));
+    if (tipMatch) {
+      return tipMatch.branch;
+    }
+
+    // The stored branch is trustworthy when it still exists remotely and
+    // is not the master fallback.
+    const storedBranch = review.sourceBranch;
+    if (
+      storedBranch &&
+      storedBranch !== "master" &&
+      (refs.length === 0 || refs.some((ref) => ref.branch === storedBranch))
+    ) {
+      return storedBranch;
+    }
+
+    // Last resort: find the branch whose commits ahead of master best
+    // overlap the review commits (by hash, then by title).
+    const reviewTitles = new Set(review.commits.map((commit) => commit.title));
+    let bestBranch: string | null = null;
+    let bestScore = 0;
+    const candidates = refs
+      .filter((ref) => ref.branch !== "master")
+      .slice(0, 25);
+    for (const ref of candidates) {
+      try {
+        const { options } = await this.fetchGitBranchCommitOptions(
+          remoteUrl,
+          ref.branch,
+        );
+        const score = options.reduce(
+          (sum, option) =>
+            sum +
+            (reviewHashes.has(option.hash)
+              ? 2
+              : reviewTitles.has(option.title)
+                ? 1
+                : 0),
+          0,
+        );
+        if (score > bestScore) {
+          bestScore = score;
+          bestBranch = ref.branch;
+        }
+      } catch {
+        continue;
+      }
+    }
+    if (bestBranch) {
+      return bestBranch;
+    }
+
+    return storedBranch;
+  }
+
   private async computeSyncPlan(
     review: ReviewWithRelations,
     selectedHashes?: string[],
   ): Promise<SyncPlan> {
     const metadata = this.metadataFromUrl(review.gitwebUrl);
-    const branch = review.sourceBranch ?? metadata.sourceBranch;
-    if (!metadata.remoteUrl || !branch) {
+    if (!metadata.remoteUrl) {
       throw new AppException(
         ErrorCode.UNKNOWN_ERROR,
         HttpStatus.BAD_REQUEST,
         "This review has no source branch to synchronize from",
+      );
+    }
+
+    const branch = await this.resolveSyncBranch(review, metadata.remoteUrl);
+    if (!branch) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.BAD_REQUEST,
+        "Could not find a remote branch containing the review commits",
       );
     }
 
