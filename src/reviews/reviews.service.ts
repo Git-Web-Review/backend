@@ -2356,6 +2356,7 @@ export class ReviewsService {
       repoPath,
       "show",
       "--format=",
+      "--full-index",
       "--find-renames",
       "--find-copies",
       "--no-ext-diff",
