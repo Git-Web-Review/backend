@@ -2273,11 +2273,14 @@ export class ReviewsService {
       params.get("p") ??
       params.get("project") ??
       this.nullIfBlank(url.pathname.split("/").filter(Boolean)[0]);
+    // With query-style gitweb URLs the pathname is the CGI script path
+    // (e.g. /git/), not a usable ref: only path-based URLs may use it.
+    const pathHead =
+      params.get("p") || params.get("project")
+        ? null
+        : this.nullIfBlank(url.pathname.split("/").filter(Boolean).at(-1));
     const head =
-      params.get("h") ??
-      params.get("id") ??
-      params.get("commit") ??
-      this.nullIfBlank(url.pathname.split("/").filter(Boolean).at(-1));
+      params.get("h") ?? params.get("id") ?? params.get("commit") ?? pathHead;
     const branchParam = this.nullIfBlank(
       params.get("hb") ?? params.get("branch"),
     );
