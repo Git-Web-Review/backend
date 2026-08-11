@@ -1182,6 +1182,58 @@ export class ReviewsService {
         entry.previous &&
         entry.previous.acks.length > 0,
     );
+    const modifiedEntries = plan.entries.filter(
+      (entry) =>
+        entry.changeKind === ReviewCommitChangeKind.MODIFIED &&
+        entry.previous &&
+        entry.metadata,
+    );
+    const commentRemaps: {
+      commentId: string;
+      filePath: string;
+      lineNumber: number | null;
+    }[] = [];
+    if (modifiedEntries.length) {
+      const lineComments = await this.prisma.reviewComment.findMany({
+        where: {
+          reviewId,
+          commitHash: {
+            in: modifiedEntries.map((entry) => entry.previous!.hash),
+          },
+          filePath: { not: null },
+          lineNumber: { not: null },
+        },
+        select: {
+          id: true,
+          commitHash: true,
+          filePath: true,
+          lineNumber: true,
+          side: true,
+        },
+      });
+      for (const comment of lineComments) {
+        const entry = modifiedEntries.find(
+          (candidate) => candidate.previous!.hash === comment.commitHash,
+        );
+        if (!entry) {
+          continue;
+        }
+        const remapped = this.remapCommentTarget(
+          this.gitDiffFromJson(entry.previous!.gitDiff),
+          entry.metadata!.gitDiff,
+          {
+            filePath: comment.filePath!,
+            lineNumber: comment.lineNumber!,
+            side: comment.side,
+          },
+        );
+        commentRemaps.push({
+          commentId: comment.id,
+          filePath: remapped?.filePath ?? comment.filePath!,
+          lineNumber: remapped?.lineNumber ?? null,
+        });
+      }
+    }
     const allCommitsStayAcked =
       plan.dropped.length === 0 &&
       plan.entries.every(
@@ -1264,6 +1316,18 @@ export class ReviewsService {
         await tx.reviewComment.updateMany({
           where: { reviewId, commitHash: `sync:${entry.previous!.id}` },
           data: { commitHash: entry.hash },
+        });
+      }
+
+      // A comment whose line no longer exists in the new diff is closed;
+      // otherwise it follows its line content to the new location.
+      for (const remap of commentRemaps) {
+        await tx.reviewComment.update({
+          where: { id: remap.commentId },
+          data:
+            remap.lineNumber === null
+              ? { done: true, doneById: user.id, doneAt: new Date() }
+              : { filePath: remap.filePath, lineNumber: remap.lineNumber },
         });
       }
 
@@ -1579,6 +1643,98 @@ export class ReviewsService {
       );
 
     return { branch, entries, dropped, hasChanges };
+  }
+
+  private diffCommentRows(
+    patch: string,
+  ): { text: string; lineNumber: number; side: ReviewCommentSide }[] {
+    const rows: {
+      text: string;
+      lineNumber: number;
+      side: ReviewCommentSide;
+    }[] = [];
+    let oldLine = 0;
+    let newLine = 0;
+    let insideHunk = false;
+
+    for (const line of patch.split("\n")) {
+      const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (hunk) {
+        oldLine = Number(hunk[1]);
+        newLine = Number(hunk[2]);
+        insideHunk = true;
+        continue;
+      }
+      if (!insideHunk) {
+        continue;
+      }
+      if (line.startsWith("+") && !line.startsWith("+++")) {
+        rows.push({
+          text: line,
+          lineNumber: newLine,
+          side: ReviewCommentSide.AFTER,
+        });
+        newLine += 1;
+      } else if (line.startsWith("-") && !line.startsWith("---")) {
+        rows.push({
+          text: line,
+          lineNumber: oldLine,
+          side: ReviewCommentSide.BEFORE,
+        });
+        oldLine += 1;
+      } else if (line.startsWith(" ")) {
+        // Context lines are numbered on the new side, like the frontend.
+        rows.push({
+          text: line,
+          lineNumber: newLine,
+          side: ReviewCommentSide.AFTER,
+        });
+        oldLine += 1;
+        newLine += 1;
+      }
+    }
+
+    return rows;
+  }
+
+  private remapCommentTarget(
+    oldDiff: ReviewDiffResponseDto,
+    newDiff: ReviewDiffResponseDto,
+    comment: { filePath: string; lineNumber: number; side: ReviewCommentSide },
+  ): { filePath: string; lineNumber: number } | null {
+    const oldFile = oldDiff.files.find(
+      (file) => file.path === comment.filePath,
+    );
+    const newFile = newDiff.files.find(
+      (file) =>
+        file.path === comment.filePath || file.oldPath === comment.filePath,
+    );
+    if (!oldFile || !newFile) {
+      return null;
+    }
+
+    const oldRow = this.diffCommentRows(oldFile.patch).find(
+      (row) =>
+        row.lineNumber === comment.lineNumber && row.side === comment.side,
+    );
+    if (!oldRow) {
+      return null;
+    }
+
+    const candidates = this.diffCommentRows(newFile.patch).filter(
+      (row) => row.side === comment.side && row.text === oldRow.text,
+    );
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    const closest = candidates.reduce((best, row) =>
+      Math.abs(row.lineNumber - comment.lineNumber) <
+      Math.abs(best.lineNumber - comment.lineNumber)
+        ? row
+        : best,
+    );
+    return { filePath: newFile.path, lineNumber: closest.lineNumber };
   }
 
   private async ensureCommitPatchIds(
