@@ -31,6 +31,16 @@ export class CreateReviewDto {
   gitwebUrl!: string;
 
   @ApiPropertyOptional({
+    description:
+      "Custom review title. Defaults to the branch name or the first commit title.",
+    example: "Add VLAN support to vrouter",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(400)
+  title?: string;
+
+  @ApiPropertyOptional({
     type: [String],
     example: ["9ad1e3de-a9af-4e2f-8d3d-4d6f6c85439a"],
   })

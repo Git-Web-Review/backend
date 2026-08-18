@@ -275,11 +275,12 @@ export class ReviewsService {
     );
     const commitCount = commitCreates.length;
     const title =
-      gitwebMetadata.linkKind === "SUMMARY" && commitCount > 0
+      this.nullIfBlank(dto.title) ??
+      (gitwebMetadata.linkKind === "SUMMARY" && commitCount > 0
         ? commitCount === 1
           ? commitCreates[0].title
           : `${gitwebMetadata.sourceBranch ?? "series"} (${commitCount} commits)`
-        : gitwebMetadata.title;
+        : gitwebMetadata.title);
     const description =
       gitwebMetadata.linkKind === "SUMMARY" && commitCount > 1
         ? commitCreates.map((commit) => `- ${commit.title}`).join("\n")
