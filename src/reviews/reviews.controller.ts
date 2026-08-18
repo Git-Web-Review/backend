@@ -308,6 +308,23 @@ export class ReviewsController {
     return this.reviewsService.acknowledge(user, id);
   }
 
+  @Delete(":id/ack")
+  @ApiOperation({
+    summary: "Withdraw the reviewer acknowledgement of all commits",
+  })
+  @ApiOkResponse({
+    description: "Review acknowledgement withdrawn",
+    type: ReviewResponseDto,
+  })
+  @ApiValidationErrorResponse()
+  @ApiNotFoundErrorResponse()
+  unacknowledge(
+    @CurrentUser() user: User,
+    @Param("id") id: string,
+  ): Promise<ReviewResponseDto> {
+    return this.reviewsService.unacknowledge(user, id);
+  }
+
   @Patch(":id/commits/:commitId/ack")
   @ApiOperation({ summary: "Acknowledge a single review commit as reviewer" })
   @ApiOkResponse({
@@ -322,6 +339,22 @@ export class ReviewsController {
     @Param("commitId") commitId: string,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.acknowledgeCommit(user, id, commitId);
+  }
+
+  @Delete(":id/commits/:commitId/ack")
+  @ApiOperation({ summary: "Withdraw the acknowledgement of a single commit" })
+  @ApiOkResponse({
+    description: "Review commit acknowledgement withdrawn",
+    type: ReviewResponseDto,
+  })
+  @ApiValidationErrorResponse()
+  @ApiNotFoundErrorResponse()
+  unacknowledgeCommit(
+    @CurrentUser() user: User,
+    @Param("id") id: string,
+    @Param("commitId") commitId: string,
+  ): Promise<ReviewResponseDto> {
+    return this.reviewsService.unacknowledgeCommit(user, id, commitId);
   }
 
   @Put(":id/commits/:commitId/files/viewed")

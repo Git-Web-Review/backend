@@ -778,6 +778,43 @@ export class ReviewsService {
     return this.toResponse(updatedReview);
   }
 
+  async unacknowledgeCommit(
+    user: User,
+    reviewId: string,
+    commitId: string,
+  ): Promise<ReviewResponseDto> {
+    const review = await this.findReviewOrThrow(reviewId);
+    this.assertIsReviewer(user, review);
+
+    if (review.status === ReviewStatus.CLOSED) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.BAD_REQUEST,
+        "Review is closed",
+      );
+    }
+
+    const commit = review.commits.find((item) => item.id === commitId);
+    if (!commit) {
+      throw new AppException(
+        ErrorCode.REVIEW_COMMIT_NOT_FOUND,
+        HttpStatus.NOT_FOUND,
+        "Review commit not found",
+      );
+    }
+
+    await this.prisma.reviewCommitAck.deleteMany({
+      where: { reviewCommitId: commit.id, userId: user.id },
+    });
+
+    const updatedReview = await this.refreshReviewStatusFromComments(
+      reviewId,
+      user.id,
+    );
+
+    return this.toResponse(updatedReview);
+  }
+
   async setFileViewed(
     user: User,
     reviewId: string,
@@ -864,6 +901,42 @@ export class ReviewsService {
       this.prisma.reviewReviewer.update({
         where: { reviewId_userId: { reviewId, userId: user.id } },
         data: { acknowledgedAt: new Date() },
+      }),
+    ]);
+
+    const updatedReview = await this.refreshReviewStatusFromComments(
+      reviewId,
+      user.id,
+    );
+
+    return this.toResponse(updatedReview);
+  }
+
+  async unacknowledge(
+    user: User,
+    reviewId: string,
+  ): Promise<ReviewResponseDto> {
+    const review = await this.findReviewOrThrow(reviewId);
+    this.assertIsReviewer(user, review);
+
+    if (review.status === ReviewStatus.CLOSED) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.BAD_REQUEST,
+        "Review is closed",
+      );
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.reviewCommitAck.deleteMany({
+        where: {
+          reviewCommitId: { in: review.commits.map((commit) => commit.id) },
+          userId: user.id,
+        },
+      }),
+      this.prisma.reviewReviewer.update({
+        where: { reviewId_userId: { reviewId, userId: user.id } },
+        data: { acknowledgedAt: null },
       }),
     ]);
 
