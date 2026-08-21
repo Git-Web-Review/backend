@@ -1521,10 +1521,19 @@ export class ReviewsService {
     }
 
     // Last resort: find the branch whose commits ahead of master best
-    // overlap the review commits (by hash, then by title).
+    // overlap the review commits. Patch-id (content) outranks titles:
+    // successive versions of the same series usually share commit titles,
+    // but only the current branch still has identical patches.
+    const oldPatchIds = await this.ensureCommitPatchIds(review.commits);
+    const reviewPatchIds = new Set(
+      [...oldPatchIds.values()].filter((patchId): patchId is string =>
+        Boolean(patchId),
+      ),
+    );
     const reviewTitles = new Set(review.commits.map((commit) => commit.title));
     let bestBranch: string | null = null;
-    let bestScore = 0;
+    let bestPatchIdScore = 0;
+    let bestTitleScore = 0;
     const candidates = refs
       .filter((ref) => ref.branch !== "master")
       .slice(0, 25);
@@ -1534,18 +1543,30 @@ export class ReviewsService {
           remoteUrl,
           ref.branch,
         );
-        const score = options.reduce(
-          (sum, option) =>
-            sum +
-            (reviewHashes.has(option.hash)
-              ? 2
-              : reviewTitles.has(option.title)
-                ? 1
-                : 0),
-          0,
-        );
-        if (score > bestScore) {
-          bestScore = score;
+        let patchIdScore = 0;
+        let titleScore = 0;
+        for (const option of options) {
+          if (reviewHashes.has(option.hash)) {
+            patchIdScore += 2;
+            continue;
+          }
+          const commitMetadata = await this.fetchGitCommitMetadata(
+            remoteUrl,
+            option.hash,
+          );
+          const patchId = await this.patchIdFromGitDiff(commitMetadata.gitDiff);
+          if (patchId && reviewPatchIds.has(patchId)) {
+            patchIdScore += 2;
+          } else if (reviewTitles.has(option.title)) {
+            titleScore += 1;
+          }
+        }
+        if (
+          patchIdScore > bestPatchIdScore ||
+          (patchIdScore === bestPatchIdScore && titleScore > bestTitleScore)
+        ) {
+          bestPatchIdScore = patchIdScore;
+          bestTitleScore = titleScore;
           bestBranch = ref.branch;
         }
       } catch {
