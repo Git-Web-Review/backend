@@ -1177,7 +1177,19 @@ export class ReviewsService {
 
       return tx.review.update({
         where: { id: reviewId },
-        data: {},
+        data: {
+          ...(dto.title !== undefined
+            ? { title: this.nullIfBlank(dto.title) ?? existingReview.title }
+            : {}),
+          ...(dto.description !== undefined
+            ? {
+                description: this.truncate(
+                  this.nullIfBlank(dto.description),
+                  4000,
+                ),
+              }
+            : {}),
+        },
         include: reviewInclude,
       });
     });
@@ -2140,7 +2152,11 @@ export class ReviewsService {
   }
 
   private hasOwnerOnlyUpdate(dto: UpdateReviewDto): boolean {
-    return dto.reviewerUserIds !== undefined;
+    return (
+      dto.reviewerUserIds !== undefined ||
+      dto.title !== undefined ||
+      dto.description !== undefined
+    );
   }
 
   private async validReviewerUserIds(

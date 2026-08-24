@@ -3,7 +3,9 @@ import {
   ArrayUnique,
   IsArray,
   IsOptional,
+  IsString,
   IsUUID,
+  MaxLength,
 } from "class-validator";
 
 export class UpdateReviewDto {
@@ -16,4 +18,20 @@ export class UpdateReviewDto {
   @ArrayUnique()
   @IsUUID("4", { each: true })
   reviewerUserIds?: string[];
+
+  @ApiPropertyOptional({ example: "Add VLAN support to vrouter" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(400)
+  title?: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: "Covers both the daemon and the CLI side.",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  description?: string | null;
 }
