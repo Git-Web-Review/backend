@@ -277,9 +277,10 @@ export class ReviewsService {
     const title =
       this.nullIfBlank(dto.title) ??
       (gitwebMetadata.linkKind === "SUMMARY" && commitCount > 0
-        ? commitCount === 1
-          ? commitCreates[0].title
-          : `${gitwebMetadata.sourceBranch ?? "series"} (${commitCount} commits)`
+        ? this.reviewTitleFromCommits(
+            gitwebMetadata.sourceBranch,
+            [...commitCreates].reverse().map((commit) => commit.title),
+          )
         : gitwebMetadata.title);
     const description =
       gitwebMetadata.linkKind === "SUMMARY" && commitCount > 1
@@ -1185,6 +1186,21 @@ export class ReviewsService {
     return this.toResponse(review);
   }
 
+  /**
+   * Titre d'une review dérivé de sa série : nom de la branche si elle n'est
+   * pas master, sinon titre du commit le plus ancien.
+   */
+  private reviewTitleFromCommits(
+    branch: string | null,
+    commitTitles: string[],
+  ): string | null {
+    if (branch && branch !== "master") {
+      return branch;
+    }
+
+    return commitTitles[0] ?? null;
+  }
+
   async syncPreview(
     user: User,
     reviewId: string,
@@ -1236,9 +1252,10 @@ export class ReviewsService {
 
     const commitCount = plan.entries.length;
     const nextTitle =
-      commitCount === 1
-        ? plan.entries[0].title
-        : `${plan.branch} (${commitCount} commits)`;
+      this.reviewTitleFromCommits(
+        plan.branch,
+        [...plan.entries].reverse().map((entry) => entry.title),
+      ) ?? review.title;
     const nextLog = this.truncate(
       plan.entries
         .map((entry) => entry.title)
@@ -1469,6 +1486,30 @@ export class ReviewsService {
     }
   }
 
+  private async fetchBranchPatchIds(
+    repoPath: string,
+    hashes: string[],
+  ): Promise<Map<string, string | null>> {
+    const patchIds = new Map<string, string | null>();
+    for (const hash of hashes) {
+      const patch = await this.runGit([
+        "-C",
+        repoPath,
+        "show",
+        "--format=",
+        "--full-index",
+        "--find-renames",
+        "--find-copies",
+        "--no-ext-diff",
+        "--no-color",
+        hash,
+      ]);
+      patchIds.set(hash, await this.gitPatchId(patch));
+    }
+
+    return patchIds;
+  }
+
   /**
    * Resolves the branch to synchronize from. Reviews created from a commit
    * link store a "master" fallback branch, so the stored value cannot be
@@ -1543,22 +1584,23 @@ export class ReviewsService {
           remoteUrl,
           ref.branch,
         );
-        let patchIdScore = 0;
+        const missing = options.filter(
+          (option) => !reviewHashes.has(option.hash),
+        );
+        let patchIdScore = options.length - missing.length;
         let titleScore = 0;
-        for (const option of options) {
-          if (reviewHashes.has(option.hash)) {
-            patchIdScore += 2;
-            continue;
-          }
-          const commitMetadata = await this.fetchGitCommitMetadata(
-            remoteUrl,
-            option.hash,
+        if (missing.length && reviewPatchIds.size) {
+          const branchPatchIds = await this.fetchBranchPatchIds(
+            await this.ensureGitCache(remoteUrl),
+            missing.map((option) => option.hash),
           );
-          const patchId = await this.patchIdFromGitDiff(commitMetadata.gitDiff);
-          if (patchId && reviewPatchIds.has(patchId)) {
-            patchIdScore += 2;
-          } else if (reviewTitles.has(option.title)) {
-            titleScore += 1;
+          for (const option of missing) {
+            const patchId = branchPatchIds.get(option.hash);
+            if (patchId && reviewPatchIds.has(patchId)) {
+              patchIdScore += 1;
+            } else if (reviewTitles.has(option.title)) {
+              titleScore += 1;
+            }
           }
         }
         if (
