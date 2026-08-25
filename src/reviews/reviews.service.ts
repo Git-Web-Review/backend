@@ -17,6 +17,7 @@ import {
 } from "@prisma/client";
 import { AppException } from "../common/app.exception";
 import { ErrorCode } from "../common/error-code.enum";
+import { GitwebUrlRulesService } from "../gitweb-url-rules/gitweb-url-rules.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateReviewCommentDto } from "./dto/create-review-comment.dto";
@@ -167,6 +168,7 @@ export class ReviewsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly gitwebUrlRules: GitwebUrlRulesService,
   ) {}
 
   async dashboard(
@@ -1099,7 +1101,12 @@ export class ReviewsService {
       return false;
     }
 
-    const metadata = this.metadataFromUrl(review.gitwebUrl);
+    let metadata: GitwebMetadata;
+    try {
+      metadata = await this.metadataFromUrl(review.gitwebUrl);
+    } catch {
+      return false;
+    }
     if (!metadata.remoteUrl) {
       return false;
     }
@@ -1638,7 +1645,7 @@ export class ReviewsService {
     review: ReviewWithRelations,
     selectedHashes?: string[],
   ): Promise<SyncPlan> {
-    const metadata = this.metadataFromUrl(review.gitwebUrl);
+    const metadata = await this.metadataFromUrl(review.gitwebUrl);
     if (!metadata.remoteUrl) {
       throw new AppException(
         ErrorCode.UNKNOWN_ERROR,
@@ -2493,7 +2500,7 @@ export class ReviewsService {
   private async fetchGitwebMetadata(
     gitwebUrl: string,
   ): Promise<GitwebMetadata> {
-    const baseMetadata = this.metadataFromUrl(gitwebUrl);
+    const baseMetadata = await this.metadataFromUrl(gitwebUrl);
 
     try {
       if (!baseMetadata.remoteUrl) {
@@ -2533,13 +2540,28 @@ export class ReviewsService {
         };
       }
 
-      if (!baseMetadata.sourceCommit) {
-        throw new Error("Missing git remote URL or commit hash in git-web URL");
+      // A COMMIT-kind URL without a hash (e.g. a=commitdiff;h=master) points
+      // at the tip of its source branch: resolve it via ls-remote.
+      let sourceCommit = baseMetadata.sourceCommit;
+      if (!sourceCommit) {
+        const branch = baseMetadata.sourceBranch ?? "master";
+        const lsRemote = await this.runGit([
+          "ls-remote",
+          baseMetadata.remoteUrl,
+          `refs/heads/${branch}`,
+        ]);
+        const resolvedHash = lsRemote.split(/\s+/)[0]?.trim();
+        if (!resolvedHash || !/^[0-9a-f]{40}$/i.test(resolvedHash)) {
+          throw new Error(
+            `Could not resolve branch "${branch}" on ${baseMetadata.remoteUrl}`,
+          );
+        }
+        sourceCommit = resolvedHash;
       }
 
       const commitMetadata = await this.fetchGitCommitMetadata(
         baseMetadata.remoteUrl,
-        baseMetadata.sourceCommit,
+        sourceCommit,
       );
       const metadata = {
         ...baseMetadata,
@@ -2570,29 +2592,14 @@ export class ReviewsService {
     }
   }
 
-  private metadataFromUrl(gitwebUrl: string): GitwebMetadata {
-    const url = new URL(gitwebUrl);
-    const params = this.gitwebParams(url);
-    const action = params.get("a")?.toLowerCase() ?? null;
-    const linkKind: GitwebLinkKind =
-      action && ["summary", "shortlog", "log", "heads", "tree"].includes(action)
-        ? "SUMMARY"
-        : "COMMIT";
-    const project =
-      params.get("p") ??
-      params.get("project") ??
-      this.nullIfBlank(url.pathname.split("/").filter(Boolean)[0]);
-    // With query-style gitweb URLs the pathname is the CGI script path
-    // (e.g. /git/), not a usable ref: only path-based URLs may use it.
-    const pathHead =
-      params.get("p") || params.get("project")
-        ? null
-        : this.nullIfBlank(url.pathname.split("/").filter(Boolean).at(-1));
-    const head =
-      params.get("h") ?? params.get("id") ?? params.get("commit") ?? pathHead;
-    const branchParam = this.nullIfBlank(
-      params.get("hb") ?? params.get("branch"),
-    );
+  private async metadataFromUrl(gitwebUrl: string): Promise<GitwebMetadata> {
+    const parsed = await this.gitwebUrlRules.parseGitwebUrl(gitwebUrl);
+    const { linkKind } = parsed;
+    // A COMMIT-kind URL whose HEAD capture is not a hash (e.g.
+    // a=commitdiff;h=master) points at the tip of that branch: use it as the
+    // source branch for later branch resolution instead of a commit hash.
+    const headAsBranch =
+      linkKind === "COMMIT" && !parsed.commitHash ? parsed.head : null;
 
     return {
       linkKind,
@@ -2600,13 +2607,13 @@ export class ReviewsService {
       description: null,
       log: null,
       rawHtml: null,
-      remoteUrl: project ? `git://${url.host}/${project}` : null,
-      sourceProject: this.nullIfBlank(project),
+      remoteUrl: parsed.remoteUrl,
+      sourceProject: parsed.project,
       sourceBranch:
         linkKind === "SUMMARY"
-          ? (this.nullIfBlank(head) ?? branchParam ?? "master")
-          : (branchParam ?? "master"),
-      sourceCommit: linkKind === "SUMMARY" ? null : this.nullIfBlank(head),
+          ? (parsed.head ?? parsed.branch ?? "master")
+          : (parsed.branch ?? headAsBranch ?? "master"),
+      sourceCommit: linkKind === "SUMMARY" ? null : parsed.commitHash,
       reviewerEmails: [],
       commitOptions: [],
       gitDiff: { files: [] },
@@ -2614,28 +2621,6 @@ export class ReviewsService {
       fetchedAt: null,
       fetchError: null,
     };
-  }
-
-  private gitwebParams(url: URL): Map<string, string> {
-    const params = new Map<string, string>();
-
-    for (const entry of url.search.slice(1).split(/[&;]/)) {
-      const [rawKey, ...rawValueParts] = entry.split("=");
-      if (!rawKey) {
-        continue;
-      }
-      const rawValue = rawValueParts.join("=");
-      params.set(
-        this.decodeUrlComponent(rawKey),
-        this.decodeUrlComponent(rawValue),
-      );
-    }
-
-    return params;
-  }
-
-  private decodeUrlComponent(value: string): string {
-    return decodeURIComponent(value.replace(/\+/g, " "));
   }
 
   private async fetchGitCommitMetadata(

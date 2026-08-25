@@ -1,0 +1,13 @@
+model GitwebUrlRule {
+    id             String            @id @default(uuid())
+    label          String?
+    regex          String
+    remoteTemplate String?           @map("remote_template")
+    linkKind       GitwebUrlRuleKind @default(AUTO) @map("link_kind")
+    priority       Int               @default(100)
+    enabled        Boolean           @default(true)
+    createdAt      DateTime          @default(now()) @map("created_at")
+    updatedAt      DateTime          @updatedAt @map("updated_at")
+
+    @@map("gitweb_url_rules")
+}

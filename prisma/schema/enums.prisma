@@ -50,3 +50,9 @@ enum ReviewFieldType {
     TEXT
     NUMBER
 }
+
+enum GitwebUrlRuleKind {
+    COMMIT
+    SUMMARY
+    AUTO
+}

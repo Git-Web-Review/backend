@@ -5,6 +5,7 @@ import { AdminModule } from "./admin/admin.module";
 import { AuthModule } from "./auth/auth.module";
 import { CommitLogLinkRulesModule } from "./commit-log-link-rules/commit-log-link-rules.module";
 import { CronModule } from "./cron/cron.module";
+import { GitwebUrlRulesModule } from "./gitweb-url-rules/gitweb-url-rules.module";
 import { HealthModule } from "./health/health.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { PrismaModule } from "./prisma/prisma.module";
@@ -58,6 +59,7 @@ import { UsersModule } from "./users/users.module";
     RedisModule,
     AuthModule,
     CommitLogLinkRulesModule,
+    GitwebUrlRulesModule,
     AdminModule,
     UsersModule,
     ReviewFieldsModule,
