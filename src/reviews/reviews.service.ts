@@ -1509,24 +1509,41 @@ export class ReviewsService {
     repoPath: string,
     hashes: string[],
   ): Promise<Map<string, string | null>> {
-    const patchIds = new Map<string, string | null>();
-    for (const hash of hashes) {
-      const patch = await this.runGit([
-        "-C",
-        repoPath,
-        "show",
-        "--format=",
-        "--full-index",
-        "--find-renames",
-        "--find-copies",
-        "--no-ext-diff",
-        "--no-color",
-        hash,
-      ]);
-      patchIds.set(hash, await this.gitPatchId(patch));
+    // Pipeline recommandé par la doc git-patch-id : rev-list | diff-tree
+    // --patch --stdin | patch-id, un seul appel par branche au lieu d'un
+    // `git show` par commit.
+    if (!hashes.length) {
+      return new Map();
     }
 
-    return patchIds;
+    try {
+      const revList = await this.runGit([
+        "-C",
+        repoPath,
+        "rev-list",
+        "--no-merges",
+        ...hashes,
+      ]);
+      const output = await this.runGitPiped(
+        ["-C", repoPath, "diff-tree", "--patch", "--stdin", "--no-color"],
+        ["patch-id", "--stable"],
+        revList,
+      );
+      const byHash = new Map<string, string | null>(
+        hashes.map((hash) => [hash, null]),
+      );
+      const tokens = output.trim().split(/\s+/).filter(Boolean);
+      for (let index = 0; index + 1 < tokens.length; index += 2) {
+        const patchId = tokens[index];
+        const commitHash = tokens[index + 1];
+        if (patchId && commitHash && byHash.has(commitHash)) {
+          byHash.set(commitHash, patchId);
+        }
+      }
+      return byHash;
+    } catch {
+      return new Map(hashes.map((hash) => [hash, null]));
+    }
   }
 
   /**
@@ -1944,6 +1961,40 @@ export class ReviewsService {
       });
       child.stdin.on("error", () => {});
       child.stdin.end(`${input}\n`);
+    });
+  }
+
+  private runGitPiped(
+    firstArgs: string[],
+    secondArgs: string[],
+    stdin: string,
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const env = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+      const first = spawn("git", firstArgs, { env });
+      const second = spawn("git", secondArgs, { env });
+      let stdout = "";
+      let stderr = "";
+      second.stdout.setEncoding("utf8");
+      second.stdout.on("data", (chunk: string) => {
+        stdout += chunk;
+      });
+      second.stderr.setEncoding("utf8");
+      second.stderr.on("data", (chunk: string) => {
+        stderr += chunk;
+      });
+      first.stdout.pipe(second.stdin);
+      first.stderr.on("data", () => {});
+      first.on("error", reject);
+      second.on("error", reject);
+      second.on("close", (code) => {
+        if (code === 0) {
+          resolve(stdout);
+        } else {
+          reject(new Error(stderr.trim() || `git pipeline failed (${code})`));
+        }
+      });
+      first.stdin.end(stdin);
     });
   }
 
