@@ -112,6 +112,7 @@ const userSummarySelect = {
       nickname: true,
       mailNotificationsEnabled: true,
       ircNotificationsEnabled: true,
+      profileImageUrl: true,
     },
   },
   profileImage: { select: { userId: true } },
@@ -2540,6 +2541,7 @@ export class ReviewsService {
         user.settings?.mailNotificationsEnabled ?? false,
       ircNotificationsEnabled: user.settings?.ircNotificationsEnabled ?? false,
       hasProfileImage: !!user.profileImage,
+      profileImageUrl: user.settings?.profileImageUrl ?? null,
     };
   }
 

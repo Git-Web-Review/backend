@@ -21,4 +21,7 @@ export class UserSummaryResponseDto {
 
   @ApiProperty()
   hasProfileImage!: boolean;
+
+  @ApiProperty({ type: String, nullable: true })
+  profileImageUrl!: string | null;
 }
