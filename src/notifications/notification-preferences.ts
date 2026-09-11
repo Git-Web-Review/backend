@@ -11,7 +11,7 @@ export const NOTIFICATION_CATEGORIES = [
 
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
 
-export type NotificationMedium = "mail" | "irc";
+export type NotificationMedium = "mail" | "irc" | "webhook";
 
 export function notificationCategory(
   type: NotificationType,

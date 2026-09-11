@@ -13,6 +13,7 @@ import {
 const USER_NOTIFICATION_CHANNEL_PREFIX = "notifications:user";
 const IRC_NOTIFICATION_CHANNEL = "notifications:irc";
 const EMAIL_NOTIFICATION_CHANNEL = "notifications:email";
+const WEBHOOK_NOTIFICATION_CHANNEL = "notifications:webhook";
 
 type NotificationPage = {
   items: Notification[];
@@ -117,6 +118,14 @@ export class NotificationsService {
         "irc",
         category,
       );
+    const webhookEnabled =
+      (settings?.webhookNotificationsEnabled ?? false) &&
+      !!settings?.webhookUrl &&
+      notificationCategoryEnabled(
+        settings?.notificationPreferences,
+        "webhook",
+        category,
+      );
 
     const event = {
       type: notification.type,
@@ -129,6 +138,8 @@ export class NotificationsService {
         ircNotificationsEnabled: ircEnabled,
         ircNickname: ircEnabled ? (settings?.ircNickname ?? null) : null,
         mailNotificationsEnabled: mailEnabled,
+        webhookNotificationsEnabled: webhookEnabled,
+        webhookUrl: webhookEnabled ? (settings?.webhookUrl ?? null) : null,
       },
       payload: notification.payload,
       createdAt: notification.createdAt.toISOString(),
@@ -141,6 +152,7 @@ export class NotificationsService {
       ),
       this.redis.publish(IRC_NOTIFICATION_CHANNEL, event),
       this.redis.publish(EMAIL_NOTIFICATION_CHANNEL, event),
+      this.redis.publish(WEBHOOK_NOTIFICATION_CHANNEL, event),
     ]);
 
     return notification;

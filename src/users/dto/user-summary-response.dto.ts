@@ -20,6 +20,9 @@ export class UserSummaryResponseDto {
   ircNotificationsEnabled!: boolean;
 
   @ApiProperty()
+  webhookNotificationsEnabled!: boolean;
+
+  @ApiProperty()
   hasProfileImage!: boolean;
 
   @ApiProperty({ type: String, nullable: true })

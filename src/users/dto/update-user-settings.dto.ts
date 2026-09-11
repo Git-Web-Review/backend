@@ -56,6 +56,11 @@ export class NotificationPreferencesDto {
   @Type(() => NotificationMediumPreferencesDto)
   irc?: NotificationMediumPreferencesDto;
 
+  @ApiPropertyOptional({ type: NotificationMediumPreferencesDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationMediumPreferencesDto)
+  webhook?: NotificationMediumPreferencesDto;
 }
 
 export class UpdateUserSettingsDto {
@@ -114,6 +119,27 @@ export class UpdateUserSettingsDto {
   @IsString()
   @MaxLength(80)
   ircNickname?: string | null;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  webhookNotificationsEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: "https://chat.company.tld/hooks/abc123",
+    description:
+      "Endpoint the http-relay posts to. Required when webhook notifications are enabled.",
+  })
+  @IsOptional()
+  @IsUrl({
+    require_tld: false,
+    require_protocol: true,
+    protocols: ["http", "https"],
+  })
+  @MaxLength(2048)
+  webhookUrl?: string | null;
 
   @ApiPropertyOptional({ type: NotificationPreferencesDto })
   @IsOptional()

@@ -47,6 +47,7 @@ const userSummarySelect = {
       nickname: true,
       mailNotificationsEnabled: true,
       ircNotificationsEnabled: true,
+      webhookNotificationsEnabled: true,
       profileImageUrl: true,
     },
   },
@@ -152,6 +153,15 @@ export class UsersService {
       );
     }
 
+    const webhookUrl = this.nullIfBlank(dto.webhookUrl);
+    if (dto.webhookNotificationsEnabled && !webhookUrl) {
+      throw new AppException(
+        ErrorCode.UNKNOWN_ERROR,
+        HttpStatus.BAD_REQUEST,
+        "Webhook URL is required when webhook notifications are enabled",
+      );
+    }
+
     return this.prisma.$transaction(async (tx) => {
       if (dto.hostname !== undefined) {
         await tx.user.update({
@@ -169,6 +179,8 @@ export class UsersService {
           mailNotificationsEnabled: dto.mailNotificationsEnabled,
           ircNotificationsEnabled: dto.ircNotificationsEnabled,
           ircNickname,
+          webhookNotificationsEnabled: dto.webhookNotificationsEnabled,
+          webhookUrl,
           notificationPreferences: this.notificationPreferencesJson(
             dto.notificationPreferences,
           ),
@@ -181,6 +193,8 @@ export class UsersService {
           mailNotificationsEnabled: dto.mailNotificationsEnabled ?? false,
           ircNotificationsEnabled: dto.ircNotificationsEnabled ?? false,
           ircNickname,
+          webhookNotificationsEnabled: dto.webhookNotificationsEnabled ?? false,
+          webhookUrl,
           notificationPreferences:
             this.notificationPreferencesJson(dto.notificationPreferences) ?? {},
         },
@@ -316,6 +330,8 @@ export class UsersService {
       mailNotificationsEnabled:
         user.settings?.mailNotificationsEnabled ?? false,
       ircNotificationsEnabled: user.settings?.ircNotificationsEnabled ?? false,
+      webhookNotificationsEnabled:
+        user.settings?.webhookNotificationsEnabled ?? false,
       hasProfileImage: !!user.profileImage,
       profileImageUrl: user.settings?.profileImageUrl ?? null,
     };

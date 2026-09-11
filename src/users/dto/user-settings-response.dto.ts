@@ -23,6 +23,12 @@ export class UserSettingsResponseDto implements UserSettings {
   @ApiProperty({ type: String, nullable: true })
   ircNickname!: string | null;
 
+  @ApiProperty()
+  webhookNotificationsEnabled!: boolean;
+
+  @ApiProperty({ type: String, nullable: true })
+  webhookUrl!: string | null;
+
   @ApiProperty({ type: Object })
   notificationPreferences!: Prisma.JsonValue;
 }
