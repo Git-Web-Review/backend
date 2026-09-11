@@ -7,8 +7,8 @@ export class CurrentUserResponseDto implements User {
   @ApiProperty()
   id!: string;
 
-  @ApiProperty()
-  firebaseUid!: string;
+  @ApiProperty({ type: String, nullable: true })
+  firebaseUid!: string | null;
 
   @ApiProperty()
   email!: string;

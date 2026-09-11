@@ -1,19 +1,12 @@
-import {
-  Controller,
-  Get,
-  Header,
-  Param,
-  Res,
-  StreamableFile,
-  UseGuards,
-} from "@nestjs/common";
-import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { Get, Header, Res, StreamableFile } from "@nestjs/common";
 import { Response } from "express";
-import { FirebaseAuthGuard } from "../auth/firebase-auth.guard";
+import { ApiAuthenticatedController } from "../auth/api-controller.decorators";
 import {
-  ApiAuthErrorResponses,
-  ApiNotFoundErrorResponse,
-} from "../common/swagger/api-error-responses";
+  ApiEndpoint,
+  ApiTag,
+  IMAGE_CONTENT,
+  UuidParam,
+} from "../common/swagger";
 import { UsersService } from "./users.service";
 
 /**
@@ -21,21 +14,22 @@ import { UsersService } from "./users.service";
  * own image (upload, read, delete); this route only serves the bytes, so any
  * signed-in user can render a reviewer's avatar next to their name.
  */
-@ApiTags("users")
-@ApiBearerAuth()
-@ApiAuthErrorResponses()
-@UseGuards(FirebaseAuthGuard)
-@Controller("v1/users")
+@ApiAuthenticatedController(ApiTag.Users, "v1/users")
 export class UserProfileImagesController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get(":userId/profile-image")
-  @ApiOperation({ summary: "Get a user profile image" })
-  @ApiOkResponse({ description: "Profile image bytes returned" })
-  @ApiNotFoundErrorResponse()
+  @ApiEndpoint({
+    summary: "Get a user profile image",
+    response:
+      "Raw image bytes, served with the stored `Content-Type`. Not JSON.",
+    content: IMAGE_CONTENT,
+    notFound: true,
+  })
   @Header("Cache-Control", "private, max-age=300")
   async getProfileImage(
-    @Param("userId") userId: string,
+    @UuidParam("userId", "Identifier of the user whose avatar is requested")
+    userId: string,
     @Res({ passthrough: true }) response: Response,
   ): Promise<StreamableFile> {
     const profileImage = await this.usersService.getProfileImage(userId);

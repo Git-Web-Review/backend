@@ -6,13 +6,15 @@ import {
 } from "@nestjs/common";
 import { GitwebUrlRuleKind, Prisma, type GitwebUrlRule } from "@prisma/client";
 import { AppException } from "../common/app.exception";
+import { DeletionResponseDto } from "../common/dto/deletion-response.dto";
 import { ErrorCode } from "../common/error-code.enum";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateGitwebUrlRuleDto } from "./dto/create-gitweb-url-rule.dto";
+import type { GitwebLinkKind } from "./gitweb-link-kind";
 import { UpdateGitwebUrlRuleDto } from "./dto/update-gitweb-url-rule.dto";
 
 export type GitwebUrlParseResult = {
-  linkKind: "COMMIT" | "SUMMARY";
+  linkKind: GitwebLinkKind;
   remoteUrl: string | null;
   hostname: string | null;
   project: string | null;
@@ -170,7 +172,7 @@ export class GitwebUrlRulesService implements OnModuleInit {
     return this.prisma.gitwebUrlRule.update({ where: { id }, data });
   }
 
-  async delete(id: string): Promise<{ id: string; deleted: boolean }> {
+  async delete(id: string): Promise<DeletionResponseDto> {
     await this.findOrThrow(id);
     await this.prisma.gitwebUrlRule.delete({ where: { id } });
     return { id, deleted: true };
@@ -193,7 +195,7 @@ export class GitwebUrlRulesService implements OnModuleInit {
       }
 
       const variables = this.templateVariables(match.groups);
-      const linkKind: "COMMIT" | "SUMMARY" =
+      const linkKind: GitwebLinkKind =
         rule.linkKind === GitwebUrlRuleKind.AUTO
           ? variables.COMMIT_HASH
             ? "COMMIT"

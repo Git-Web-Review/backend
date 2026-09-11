@@ -1,11 +1,5 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  HttpStatus,
-  Injectable,
-  Logger,
-} from "@nestjs/common";
-import { UserRole } from "@prisma/client";
+import { HttpStatus, Injectable, Logger } from "@nestjs/common";
+import { UserRole, type User } from "@prisma/client";
 import { AppException } from "../common/app.exception";
 import { ErrorCode } from "../common/error-code.enum";
 import { PrismaService } from "../prisma/prisma.service";
@@ -13,28 +7,20 @@ import { FirebaseService } from "./firebase.service";
 
 const GLOBAL_SETTINGS_ID = "global";
 
+/**
+ * Resolves a Firebase ID token into the matching application user,
+ * provisioning the user and its settings on first login.
+ */
 @Injectable()
-export class FirebaseAuthGuard implements CanActivate {
-  private readonly logger = new Logger(FirebaseAuthGuard.name);
+export class FirebaseAuthService {
+  private readonly logger = new Logger(FirebaseAuthService.name);
 
   constructor(
-    private firebase: FirebaseService,
-    private prisma: PrismaService,
+    private readonly firebase: FirebaseService,
+    private readonly prisma: PrismaService,
   ) {}
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const authHeader = request.headers.authorization;
-
-    if (!authHeader?.startsWith("Bearer ")) {
-      throw new AppException(
-        ErrorCode.MISSING_AUTH_HEADER,
-        HttpStatus.UNAUTHORIZED,
-        "Missing or invalid authorization header",
-      );
-    }
-
-    const token = authHeader.split("Bearer ")[1];
+  async authenticate(token: string): Promise<User> {
     let decoded: Awaited<ReturnType<FirebaseService["verifyToken"]>>;
 
     try {
@@ -99,8 +85,7 @@ export class FirebaseAuthGuard implements CanActivate {
       },
     });
 
-    request.user = user;
-    return true;
+    return user;
   }
 
   private domainFromEmail(email: string): string {

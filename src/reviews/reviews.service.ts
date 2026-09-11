@@ -17,6 +17,8 @@ import {
 } from "@prisma/client";
 import { AppException } from "../common/app.exception";
 import { ErrorCode } from "../common/error-code.enum";
+import { DeletionResponseDto } from "../common/dto/deletion-response.dto";
+import type { GitwebLinkKind } from "../gitweb-url-rules/gitweb-link-kind";
 import { GitwebUrlRulesService } from "../gitweb-url-rules/gitweb-url-rules.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -27,7 +29,6 @@ import { PreviewReviewDto } from "./dto/preview-review.dto";
 import { ReviewCommentResponseDto } from "./dto/review-comment-response.dto";
 import { ReviewDashboardQueryDto } from "./dto/review-dashboard-query.dto";
 import { ReviewDashboardResponseDto } from "./dto/review-dashboard-response.dto";
-import { ReviewDeletionResponseDto } from "./dto/review-deletion-response.dto";
 import { ReviewDiffResponseDto } from "./dto/review-diff-file-response.dto";
 import { ReviewPreviewResponseDto } from "./dto/review-preview-response.dto";
 import { ReviewResponseDto } from "./dto/review-response.dto";
@@ -41,8 +42,6 @@ import { SyncReviewDto } from "./dto/sync-review.dto";
 import { UpdateReviewCommentMessageDto } from "./dto/update-review-comment-message.dto";
 import { UpdateReviewCommentDto } from "./dto/update-review-comment.dto";
 import { UpdateReviewDto } from "./dto/update-review.dto";
-
-type GitwebLinkKind = "COMMIT" | "SUMMARY";
 
 type GitCommitOption = {
   hash: string;
@@ -591,7 +590,7 @@ export class ReviewsService {
     user: User,
     reviewId: string,
     commentId: string,
-  ): Promise<ReviewDeletionResponseDto> {
+  ): Promise<DeletionResponseDto> {
     const review = await this.findReviewOrThrow(reviewId);
     this.assertCanRead(user, review);
 
@@ -630,7 +629,7 @@ export class ReviewsService {
     reviewId: string,
     commentId: string,
     messageId: string,
-  ): Promise<ReviewDeletionResponseDto> {
+  ): Promise<DeletionResponseDto> {
     const review = await this.findReviewOrThrow(reviewId);
     this.assertCanRead(user, review);
 
@@ -2002,7 +2001,7 @@ export class ReviewsService {
   async delete(
     user: User,
     reviewId: string,
-  ): Promise<ReviewDeletionResponseDto> {
+  ): Promise<DeletionResponseDto> {
     const existingReview = await this.findReviewOrThrow(reviewId);
     this.assertIsOwner(user, existingReview);
 

@@ -1,30 +1,9 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Patch,
-  Post,
-  Put,
-  Query,
-  UseGuards,
-} from "@nestjs/common";
-import {
-  ApiBearerAuth,
-  ApiCreatedResponse,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from "@nestjs/swagger";
+import { Body, Delete, Get, Patch, Post, Put, Query } from "@nestjs/common";
 import { User } from "@prisma/client";
+import { ApiAuthenticatedController } from "../auth/api-controller.decorators";
 import { CurrentUser } from "../auth/current-user.decorator";
-import { FirebaseAuthGuard } from "../auth/firebase-auth.guard";
-import {
-  ApiAuthErrorResponses,
-  ApiNotFoundErrorResponse,
-  ApiValidationErrorResponse,
-} from "../common/swagger/api-error-responses";
+import { DeletionResponseDto } from "../common/dto/deletion-response.dto";
+import { ApiEndpoint, ApiTag, UuidParam } from "../common/swagger";
 import { CreateReviewCommentDto } from "./dto/create-review-comment.dto";
 import { CreateReviewCommentMessageDto } from "./dto/create-review-comment-message.dto";
 import { CreateReviewDto } from "./dto/create-review.dto";
@@ -32,36 +11,39 @@ import { PreviewReviewDto } from "./dto/preview-review.dto";
 import { ReviewCommentResponseDto } from "./dto/review-comment-response.dto";
 import { ReviewDashboardQueryDto } from "./dto/review-dashboard-query.dto";
 import { ReviewDashboardResponseDto } from "./dto/review-dashboard-response.dto";
-import { ReviewDeletionResponseDto } from "./dto/review-deletion-response.dto";
 import { ReviewPreviewResponseDto } from "./dto/review-preview-response.dto";
 import { ReviewResponseDto } from "./dto/review-response.dto";
 import { ReviewSyncPreviewResponseDto } from "./dto/review-sync-preview-response.dto";
-import { SetReviewFieldValueDto } from "./dto/set-review-field-value.dto";
 import {
   FileViewedResponseDto,
   SetFileViewedDto,
 } from "./dto/set-file-viewed.dto";
+import { SetReviewFieldValueDto } from "./dto/set-review-field-value.dto";
 import { SyncReviewDto } from "./dto/sync-review.dto";
 import { UpdateReviewCommentMessageDto } from "./dto/update-review-comment-message.dto";
 import { UpdateReviewCommentDto } from "./dto/update-review-comment.dto";
 import { UpdateReviewDto } from "./dto/update-review.dto";
 import { ReviewsService } from "./reviews.service";
 
-@ApiTags("reviews")
-@ApiBearerAuth()
-@ApiAuthErrorResponses()
-@UseGuards(FirebaseAuthGuard)
-@Controller("v1/reviews")
+/** Path parameter descriptions, written once for the twenty routes using them. */
+const REVIEW_ID = "Review identifier";
+const COMMENT_ID = "Identifier of a comment thread on the review";
+const MESSAGE_ID = "Identifier of one message inside the comment thread";
+const COMMIT_ID = "Identifier of a commit inside the review";
+const FIELD_ID = "Identifier of a review field definition";
+
+@ApiAuthenticatedController(ApiTag.Reviews, "v1/reviews")
 export class ReviewsController {
   constructor(private readonly reviewsService: ReviewsService) {}
 
   @Get("dashboard")
-  @ApiOperation({
+  @ApiEndpoint({
     summary: "Get reviews owned by or assigned to the current user",
-  })
-  @ApiOkResponse({
-    description: "Review dashboard returned",
+    description:
+      "Three independently paginated lists in one call: reviews the caller created, reviews assigned to them, and reviews already closed.",
+    response: "Review dashboard returned",
     type: ReviewDashboardResponseDto,
+    validation: true,
   })
   dashboard(
     @CurrentUser() user: User,
@@ -71,14 +53,14 @@ export class ReviewsController {
   }
 
   @Post("preview")
-  @ApiOperation({
+  @ApiEndpoint({
     summary: "Preview extracted review data from a git-web link",
-  })
-  @ApiOkResponse({
-    description: "Review data extracted from git-web",
+    description:
+      "Fetches and parses the link without creating anything. Use it to show the caller which commits a link resolves to before committing to `POST /v1/reviews`.",
+    response: "Review data extracted from git-web",
     type: ReviewPreviewResponseDto,
+    validation: true,
   })
-  @ApiValidationErrorResponse()
   preview(
     @CurrentUser() user: User,
     @Body() dto: PreviewReviewDto,
@@ -87,12 +69,15 @@ export class ReviewsController {
   }
 
   @Post()
-  @ApiOperation({ summary: "Create a review from a git-web link" })
-  @ApiCreatedResponse({
-    description: "Review created",
+  @ApiEndpoint({
+    summary: "Create a review from a git-web link",
+    description:
+      "The link is parsed through the git-web URL rules, the repository is cloned, and the selected commits become the first version of the review.",
+    response: "Review created",
     type: ReviewResponseDto,
+    created: true,
+    validation: true,
   })
-  @ApiValidationErrorResponse()
   create(
     @CurrentUser() user: User,
     @Body() dto: CreateReviewDto,
@@ -101,130 +86,142 @@ export class ReviewsController {
   }
 
   @Get(":id")
-  @ApiOperation({ summary: "Get one review" })
-  @ApiOkResponse({ description: "Review returned", type: ReviewResponseDto })
-  @ApiNotFoundErrorResponse()
+  @ApiEndpoint({
+    summary: "Get one review",
+    description:
+      "The full review: commits, diffs, reviewers, field values and acknowledgement state.",
+    response: "Review returned",
+    type: ReviewResponseDto,
+    notFound: true,
+  })
   getOne(
     @CurrentUser() user: User,
-    @Param("id") id: string,
+    @UuidParam("id", REVIEW_ID) id: string,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.getOne(user, id);
   }
 
   @Post(":id/sync/preview")
-  @ApiOperation({
+  @ApiEndpoint({
     summary:
       "Preview the branch changes that would produce a new review version",
-  })
-  @ApiOkResponse({
-    description: "Sync preview returned",
+    description:
+      "Reports which commits were added, removed or amended since the current version, without changing anything.",
+    response: "Sync preview returned",
     type: ReviewSyncPreviewResponseDto,
+    notFound: true,
   })
-  @ApiNotFoundErrorResponse()
   syncPreview(
     @CurrentUser() user: User,
-    @Param("id") id: string,
+    @UuidParam("id", REVIEW_ID) id: string,
   ): Promise<ReviewSyncPreviewResponseDto> {
     return this.reviewsService.syncPreview(user, id);
   }
 
   @Post(":id/sync")
-  @ApiOperation({
+  @ApiEndpoint({
     summary: "Synchronize the review with its branch as a new version",
-  })
-  @ApiOkResponse({
-    description: "Review synchronized",
+    description:
+      "Creates a new version from the branch. Existing comments are carried over; acknowledgements on changed commits are reset.",
+    response: "Review synchronized",
     type: ReviewResponseDto,
+    validation: true,
+    notFound: true,
   })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
   sync(
     @CurrentUser() user: User,
-    @Param("id") id: string,
+    @UuidParam("id", REVIEW_ID) id: string,
     @Body() dto: SyncReviewDto,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.sync(user, id, dto);
   }
 
   @Put(":id/fields/:fieldId")
-  @ApiOperation({ summary: "Set a review field value" })
-  @ApiOkResponse({
-    description: "Review field value updated",
+  @ApiEndpoint({
+    summary: "Set a review field value",
+    description:
+      "The field must exist in `GET /v1/review-fields`. A blank or null value clears it.",
+    response: "Review field value updated",
     type: ReviewResponseDto,
+    validation: true,
+    notFound: true,
   })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
   setFieldValue(
     @CurrentUser() user: User,
-    @Param("id") id: string,
-    @Param("fieldId") fieldId: string,
+    @UuidParam("id", REVIEW_ID) id: string,
+    @UuidParam("fieldId", FIELD_ID) fieldId: string,
     @Body() dto: SetReviewFieldValueDto,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.setFieldValue(user, id, fieldId, dto);
   }
 
   @Get(":id/comments")
-  @ApiOperation({ summary: "Get review comments" })
-  @ApiOkResponse({
-    description: "Review comments returned",
+  @ApiEndpoint({
+    summary: "Get review comments",
+    description:
+      "Every comment thread on the review, each holding its ordered messages.",
+    response: "Review comments returned",
     type: [ReviewCommentResponseDto],
+    notFound: true,
   })
-  @ApiNotFoundErrorResponse()
   listComments(
     @CurrentUser() user: User,
-    @Param("id") id: string,
+    @UuidParam("id", REVIEW_ID) id: string,
   ): Promise<ReviewCommentResponseDto[]> {
     return this.reviewsService.listComments(user, id);
   }
 
   @Post(":id/comments")
-  @ApiOperation({ summary: "Add a review comment" })
-  @ApiCreatedResponse({
-    description: "Review comment added",
+  @ApiEndpoint({
+    summary: "Add a review comment",
+    description:
+      "Opens a new thread, either on the review as a whole or anchored to a line of a commit diff.",
+    response: "Review comment added",
     type: ReviewCommentResponseDto,
+    created: true,
+    validation: true,
+    notFound: true,
   })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
   addComment(
     @CurrentUser() user: User,
-    @Param("id") id: string,
+    @UuidParam("id", REVIEW_ID) id: string,
     @Body() dto: CreateReviewCommentDto,
   ): Promise<ReviewCommentResponseDto> {
     return this.reviewsService.addComment(user, id, dto);
   }
 
   @Post(":id/comments/:commentId/messages")
-  @ApiOperation({ summary: "Reply to a review comment conversation" })
-  @ApiCreatedResponse({
-    description: "Review comment reply added",
+  @ApiEndpoint({
+    summary: "Reply to a review comment conversation",
+    description: "Returns every thread on the review, not just the one replied to.",
+    response: "Review comment reply added",
     type: [ReviewCommentResponseDto],
+    created: true,
+    validation: true,
+    notFound: true,
   })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
   addCommentMessage(
     @CurrentUser() user: User,
-    @Param("id") id: string,
-    @Param("commentId") commentId: string,
+    @UuidParam("id", REVIEW_ID) id: string,
+    @UuidParam("commentId", COMMENT_ID) commentId: string,
     @Body() dto: CreateReviewCommentMessageDto,
   ): Promise<ReviewCommentResponseDto[]> {
     return this.reviewsService.addCommentMessage(user, id, commentId, dto);
   }
 
   @Patch(":id/comments/:commentId/messages/:messageId")
-  @ApiOperation({
+  @ApiEndpoint({
     summary: "Edit a review comment message owned by the current user",
-  })
-  @ApiOkResponse({
-    description: "Review comment message updated",
+    response: "Review comment message updated",
     type: [ReviewCommentResponseDto],
+    validation: true,
+    notFound: true,
   })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
   updateCommentMessage(
     @CurrentUser() user: User,
-    @Param("id") id: string,
-    @Param("commentId") commentId: string,
-    @Param("messageId") messageId: string,
+    @UuidParam("id", REVIEW_ID) id: string,
+    @UuidParam("commentId", COMMENT_ID) commentId: string,
+    @UuidParam("messageId", MESSAGE_ID) messageId: string,
     @Body() dto: UpdateReviewCommentMessageDto,
   ): Promise<ReviewCommentResponseDto[]> {
     return this.reviewsService.updateCommentMessage(
@@ -237,20 +234,20 @@ export class ReviewsController {
   }
 
   @Delete(":id/comments/:commentId/messages/:messageId")
-  @ApiOperation({
+  @ApiEndpoint({
     summary: "Delete a review comment message owned by the current user",
+    description:
+      "Deleting the last message of a thread deletes the thread as well.",
+    response: "Review comment message deleted",
+    type: DeletionResponseDto,
+    notFound: true,
   })
-  @ApiOkResponse({
-    description: "Review comment message deleted",
-    type: ReviewDeletionResponseDto,
-  })
-  @ApiNotFoundErrorResponse()
   deleteCommentMessage(
     @CurrentUser() user: User,
-    @Param("id") id: string,
-    @Param("commentId") commentId: string,
-    @Param("messageId") messageId: string,
-  ): Promise<ReviewDeletionResponseDto> {
+    @UuidParam("id", REVIEW_ID) id: string,
+    @UuidParam("commentId", COMMENT_ID) commentId: string,
+    @UuidParam("messageId", MESSAGE_ID) messageId: string,
+  ): Promise<DeletionResponseDto> {
     return this.reviewsService.deleteCommentMessage(
       user,
       id,
@@ -260,189 +257,201 @@ export class ReviewsController {
   }
 
   @Patch(":id/comments/:commentId")
-  @ApiOperation({ summary: "Mark a review comment as done or not done" })
-  @ApiOkResponse({
-    description: "Review comment updated",
+  @ApiEndpoint({
+    summary: "Mark a review comment as done or not done",
+    response: "Review comment updated",
     type: [ReviewCommentResponseDto],
+    validation: true,
+    notFound: true,
   })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
   updateComment(
     @CurrentUser() user: User,
-    @Param("id") id: string,
-    @Param("commentId") commentId: string,
+    @UuidParam("id", REVIEW_ID) id: string,
+    @UuidParam("commentId", COMMENT_ID) commentId: string,
     @Body() dto: UpdateReviewCommentDto,
   ): Promise<ReviewCommentResponseDto[]> {
     return this.reviewsService.updateComment(user, id, commentId, dto);
   }
 
   @Delete(":id/comments/:commentId")
-  @ApiOperation({
+  @ApiEndpoint({
     summary: "Delete a review comment owned by the current user",
+    description: "Removes the thread and all of its messages.",
+    response: "Review comment deleted",
+    type: DeletionResponseDto,
+    notFound: true,
   })
-  @ApiOkResponse({
-    description: "Review comment deleted",
-    type: ReviewDeletionResponseDto,
-  })
-  @ApiNotFoundErrorResponse()
   deleteComment(
     @CurrentUser() user: User,
-    @Param("id") id: string,
-    @Param("commentId") commentId: string,
-  ): Promise<ReviewDeletionResponseDto> {
+    @UuidParam("id", REVIEW_ID) id: string,
+    @UuidParam("commentId", COMMENT_ID) commentId: string,
+  ): Promise<DeletionResponseDto> {
     return this.reviewsService.deleteComment(user, id, commentId);
   }
 
   @Patch(":id/ack")
-  @ApiOperation({ summary: "Acknowledge all review commits as reviewer" })
-  @ApiOkResponse({
-    description: "Review acknowledged",
+  @ApiEndpoint({
+    summary: "Acknowledge all review commits as reviewer",
+    description:
+      "The reviewer's sign-off on the whole review. Only an assigned reviewer can acknowledge.",
+    response: "Review acknowledged",
     type: ReviewResponseDto,
+    validation: true,
+    notFound: true,
   })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
   acknowledge(
     @CurrentUser() user: User,
-    @Param("id") id: string,
+    @UuidParam("id", REVIEW_ID) id: string,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.acknowledge(user, id);
   }
 
   @Delete(":id/ack")
-  @ApiOperation({
+  @ApiEndpoint({
     summary: "Withdraw the reviewer acknowledgement of all commits",
-  })
-  @ApiOkResponse({
-    description: "Review acknowledgement withdrawn",
+    response: "Review acknowledgement withdrawn",
     type: ReviewResponseDto,
+    validation: true,
+    notFound: true,
   })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
   unacknowledge(
     @CurrentUser() user: User,
-    @Param("id") id: string,
+    @UuidParam("id", REVIEW_ID) id: string,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.unacknowledge(user, id);
   }
 
   @Patch(":id/commits/:commitId/ack")
-  @ApiOperation({ summary: "Acknowledge a single review commit as reviewer" })
-  @ApiOkResponse({
-    description: "Review commit acknowledged",
+  @ApiEndpoint({
+    summary: "Acknowledge a single review commit as reviewer",
+    response: "Review commit acknowledged",
     type: ReviewResponseDto,
+    validation: true,
+    notFound: true,
   })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
   acknowledgeCommit(
     @CurrentUser() user: User,
-    @Param("id") id: string,
-    @Param("commitId") commitId: string,
+    @UuidParam("id", REVIEW_ID) id: string,
+    @UuidParam("commitId", COMMIT_ID) commitId: string,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.acknowledgeCommit(user, id, commitId);
   }
 
   @Delete(":id/commits/:commitId/ack")
-  @ApiOperation({ summary: "Withdraw the acknowledgement of a single commit" })
-  @ApiOkResponse({
-    description: "Review commit acknowledgement withdrawn",
+  @ApiEndpoint({
+    summary: "Withdraw the acknowledgement of a single commit",
+    response: "Review commit acknowledgement withdrawn",
     type: ReviewResponseDto,
+    validation: true,
+    notFound: true,
   })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
   unacknowledgeCommit(
     @CurrentUser() user: User,
-    @Param("id") id: string,
-    @Param("commitId") commitId: string,
+    @UuidParam("id", REVIEW_ID) id: string,
+    @UuidParam("commitId", COMMIT_ID) commitId: string,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.unacknowledgeCommit(user, id, commitId);
   }
 
   @Put(":id/commits/:commitId/files/viewed")
-  @ApiOperation({
+  @ApiEndpoint({
     summary: "Mark a commit diff file as viewed or not viewed",
-  })
-  @ApiOkResponse({
-    description: "File view state updated",
+    description:
+      "Per-reviewer reading progress. `filePath` must match a path present in the commit diff.",
+    response: "File view state updated",
     type: FileViewedResponseDto,
+    validation: true,
+    notFound: true,
   })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
   setFileViewed(
     @CurrentUser() user: User,
-    @Param("id") id: string,
-    @Param("commitId") commitId: string,
+    @UuidParam("id", REVIEW_ID) id: string,
+    @UuidParam("commitId", COMMIT_ID) commitId: string,
     @Body() dto: SetFileViewedDto,
   ): Promise<FileViewedResponseDto> {
     return this.reviewsService.setFileViewed(user, id, commitId, dto);
   }
 
   @Patch(":id/reviewed")
-  @ApiOperation({ summary: "Mark all review commits as reviewed" })
-  @ApiOkResponse({
-    description: "Review marked as reviewed",
+  @ApiEndpoint({
+    summary: "Mark all review commits as reviewed",
+    description:
+      "The author's own progress marker, independent of the reviewer acknowledgement.",
+    response: "Review marked as reviewed",
     type: ReviewResponseDto,
+    validation: true,
+    notFound: true,
   })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
   markReviewed(
     @CurrentUser() user: User,
-    @Param("id") id: string,
+    @UuidParam("id", REVIEW_ID) id: string,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.markReviewed(user, id);
   }
 
   @Patch(":id/commits/:commitId/reviewed")
-  @ApiOperation({ summary: "Mark a single review commit as reviewed" })
-  @ApiOkResponse({
-    description: "Review commit marked as reviewed",
+  @ApiEndpoint({
+    summary: "Mark a single review commit as reviewed",
+    response: "Review commit marked as reviewed",
     type: ReviewResponseDto,
+    validation: true,
+    notFound: true,
   })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
   markCommitReviewed(
     @CurrentUser() user: User,
-    @Param("id") id: string,
-    @Param("commitId") commitId: string,
+    @UuidParam("id", REVIEW_ID) id: string,
+    @UuidParam("commitId", COMMIT_ID) commitId: string,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.markCommitReviewed(user, id, commitId);
   }
 
   @Patch(":id/close")
-  @ApiOperation({ summary: "Close an acknowledged review" })
-  @ApiOkResponse({ description: "Review closed", type: ReviewResponseDto })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
+  @ApiEndpoint({
+    summary: "Close an acknowledged review",
+    description: "Moves the review to the done list. It stays readable.",
+    response: "Review closed",
+    type: ReviewResponseDto,
+    validation: true,
+    notFound: true,
+  })
   close(
     @CurrentUser() user: User,
-    @Param("id") id: string,
+    @UuidParam("id", REVIEW_ID) id: string,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.close(user, id);
   }
 
   @Patch(":id")
-  @ApiOperation({ summary: "Update a review owned by the current user" })
-  @ApiOkResponse({ description: "Review updated", type: ReviewResponseDto })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
+  @ApiEndpoint({
+    summary: "Update a review owned by the current user",
+    description:
+      "Changes the title, description or reviewer list. Only the properties present in the body are applied.",
+    response: "Review updated",
+    type: ReviewResponseDto,
+    validation: true,
+    notFound: true,
+  })
   update(
     @CurrentUser() user: User,
-    @Param("id") id: string,
+    @UuidParam("id", REVIEW_ID) id: string,
     @Body() dto: UpdateReviewDto,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.update(user, id, dto);
   }
 
   @Delete(":id")
-  @ApiOperation({ summary: "Delete a review owned by the current user" })
-  @ApiOkResponse({
-    description: "Review deleted",
-    type: ReviewDeletionResponseDto,
+  @ApiEndpoint({
+    summary: "Delete a review owned by the current user",
+    description:
+      "Removes the review, its versions and every comment left on it, including other people's.",
+    response: "Review deleted",
+    type: DeletionResponseDto,
+    notFound: true,
   })
-  @ApiNotFoundErrorResponse()
   delete(
     @CurrentUser() user: User,
-    @Param("id") id: string,
-  ): Promise<ReviewDeletionResponseDto> {
+    @UuidParam("id", REVIEW_ID) id: string,
+  ): Promise<DeletionResponseDto> {
     return this.reviewsService.delete(user, id);
   }
 }

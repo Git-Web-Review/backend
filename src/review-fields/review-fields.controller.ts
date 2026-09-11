@@ -1,44 +1,26 @@
+import { Body, Delete, Get, Patch, Post } from "@nestjs/common";
 import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Patch,
-  Post,
-  UseGuards,
-} from "@nestjs/common";
-import {
-  ApiBearerAuth,
-  ApiCreatedResponse,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from "@nestjs/swagger";
-import { AdminGuard } from "../auth/admin.guard";
-import { FirebaseAuthGuard } from "../auth/firebase-auth.guard";
-import {
-  ApiAdminErrorResponses,
-  ApiAuthErrorResponses,
-  ApiValidationErrorResponse,
-} from "../common/swagger/api-error-responses";
+  ApiAdminOnly,
+  ApiAuthenticatedController,
+} from "../auth/api-controller.decorators";
+import { DeletionResponseDto } from "../common/dto/deletion-response.dto";
+import { ApiEndpoint, ApiTag, UuidParam } from "../common/swagger";
 import { CreateReviewFieldDto } from "./dto/create-review-field.dto";
 import { ReviewFieldResponseDto } from "./dto/review-field-response.dto";
 import { UpdateReviewFieldDto } from "./dto/update-review-field.dto";
 import { ReviewFieldsService } from "./review-fields.service";
 
-@ApiTags("review-fields")
-@ApiBearerAuth()
-@ApiAuthErrorResponses()
-@UseGuards(FirebaseAuthGuard)
-@Controller("v1/review-fields")
+/** Every signed-in user reads the definitions; only admins change them. */
+@ApiAuthenticatedController(ApiTag.ReviewFields, "v1/review-fields")
 export class ReviewFieldsController {
   constructor(private readonly reviewFieldsService: ReviewFieldsService) {}
 
   @Get()
-  @ApiOperation({ summary: "List review field definitions" })
-  @ApiOkResponse({
-    description: "Review field definitions returned",
+  @ApiEndpoint({
+    summary: "List review field definitions",
+    description:
+      "The custom fields a review can carry. Use the returned identifiers as `fieldId` when creating a review or setting a value.",
+    response: "Review field definitions returned",
     type: [ReviewFieldResponseDto],
   })
   list(): Promise<ReviewFieldResponseDto[]> {
@@ -46,40 +28,46 @@ export class ReviewFieldsController {
   }
 
   @Post()
-  @UseGuards(AdminGuard)
-  @ApiAdminErrorResponses()
-  @ApiOperation({ summary: "Create a review field definition" })
-  @ApiCreatedResponse({
-    description: "Review field definition created",
+  @ApiAdminOnly()
+  @ApiEndpoint({
+    summary: "Create a review field definition",
+    response: "Review field definition created",
     type: ReviewFieldResponseDto,
+    created: true,
+    validation: true,
   })
-  @ApiValidationErrorResponse()
   create(@Body() dto: CreateReviewFieldDto): Promise<ReviewFieldResponseDto> {
     return this.reviewFieldsService.create(dto);
   }
 
   @Patch(":id")
-  @UseGuards(AdminGuard)
-  @ApiAdminErrorResponses()
-  @ApiOperation({ summary: "Update a review field definition" })
-  @ApiOkResponse({
-    description: "Review field definition updated",
+  @ApiAdminOnly()
+  @ApiEndpoint({
+    summary: "Update a review field definition",
+    response: "Review field definition updated",
     type: ReviewFieldResponseDto,
+    validation: true,
+    notFound: true,
   })
-  @ApiValidationErrorResponse()
   update(
-    @Param("id") id: string,
+    @UuidParam("id", "Review field definition identifier") id: string,
     @Body() dto: UpdateReviewFieldDto,
   ): Promise<ReviewFieldResponseDto> {
     return this.reviewFieldsService.update(id, dto);
   }
 
   @Delete(":id")
-  @UseGuards(AdminGuard)
-  @ApiAdminErrorResponses()
-  @ApiOperation({ summary: "Delete a review field definition" })
-  @ApiOkResponse({ description: "Review field definition deleted" })
-  delete(@Param("id") id: string): Promise<{ id: string; deleted: boolean }> {
+  @ApiAdminOnly()
+  @ApiEndpoint({
+    summary: "Delete a review field definition",
+    description: "Values already recorded on existing reviews go with it.",
+    response: "Review field definition deleted",
+    type: DeletionResponseDto,
+    notFound: true,
+  })
+  delete(
+    @UuidParam("id", "Review field definition identifier") id: string,
+  ): Promise<DeletionResponseDto> {
     return this.reviewFieldsService.delete(id);
   }
 }

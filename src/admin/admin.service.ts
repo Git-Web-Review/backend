@@ -18,6 +18,8 @@ import type { UserWithSettings } from "../users/users.service";
 import { AdminRemovalResponseDto } from "./dto/admin-removal-response.dto";
 import { AdminTextNotificationDto } from "./dto/admin-text-notification.dto";
 import { AdminTextNotificationResponseDto } from "./dto/admin-text-notification-response.dto";
+import { UserDeletionPreviewResponseDto } from "./dto/user-deletion-preview-response.dto";
+import { UserRemovalResponseDto } from "./dto/user-removal-response.dto";
 
 @Injectable()
 export class AdminService implements OnModuleInit {
@@ -131,11 +133,135 @@ export class AdminService implements OnModuleInit {
     return { email: normalizedEmail, removed: true };
   }
 
-  async updateUserSettings(
+  /**
+   * Counts everything a deletion would destroy. Deleting a review cascades to
+   * its commits and comments, so reviews owned by the user take other people's
+   * comments down with them: the admin sees that before confirming.
+   */
+  async previewUserDeletion(
+    currentUser: User,
     userId: string,
-    dto: UpdateUserSettingsDto,
-  ): Promise<UserSettings> {
+  ): Promise<UserDeletionPreviewResponseDto> {
+    const user = await this.findUserOrThrow(userId);
+    const blockedBy = await this.deletionBlocker(currentUser, user);
+
+    const [
+      serviceAccount,
+      ownedReviews,
+      commentsOnOwnedReviews,
+      foreignMessagesOnOwnedReviews,
+      authoredMessages,
+      reviewerAssignments,
+      commitAcks,
+      fileViews,
+      notifications,
+    ] = await this.prisma.$transaction([
+      this.prisma.serviceAccount.findUnique({
+        where: { userId },
+        select: { id: true },
+      }),
+      this.prisma.review.count({ where: { ownerId: userId } }),
+      this.prisma.reviewComment.count({
+        where: { review: { ownerId: userId } },
+      }),
+      this.prisma.reviewCommentMessage.count({
+        where: {
+          comment: { review: { ownerId: userId } },
+          fromId: { not: userId },
+        },
+      }),
+      this.prisma.reviewCommentMessage.count({ where: { fromId: userId } }),
+      this.prisma.reviewReviewer.count({ where: { userId } }),
+      this.prisma.reviewCommitAck.count({ where: { userId } }),
+      this.prisma.reviewFileView.count({ where: { userId } }),
+      this.prisma.notification.count({ where: { userId } }),
+    ]);
+
+    return {
+      userId: user.id,
+      email: user.email,
+      deletable: !blockedBy,
+      blockedBy,
+      isServiceAccount: !!serviceAccount,
+      ownedReviews,
+      commentsOnOwnedReviews,
+      foreignMessagesOnOwnedReviews,
+      authoredMessages,
+      reviewerAssignments,
+      commitAcks,
+      fileViews,
+      notifications,
+    };
+  }
+
+  /**
+   * Deletes a user and everything that points at it. Only users without a
+   * Firebase identity can go: anyone who signed in through Firebase would be
+   * recreated on their next login anyway.
+   *
+   * Reviews owned by the user are deleted first, which cascades to their
+   * commits, comments and messages whoever wrote them. The remaining traces on
+   * other people's reviews are then cleaned by hand, because those foreign keys
+   * deliberately have no cascade.
+   */
+  async deleteUser(
+    currentUser: User,
+    userId: string,
+  ): Promise<UserRemovalResponseDto> {
+    const user = await this.findUserOrThrow(userId);
+    const blockedBy = await this.deletionBlocker(currentUser, user);
+
+    if (blockedBy) {
+      throw new AppException(
+        blockedBy,
+        blockedBy === ErrorCode.USER_NOT_FOUND
+          ? HttpStatus.NOT_FOUND
+          : HttpStatus.FORBIDDEN,
+        this.deletionBlockerMessage(blockedBy),
+      );
+    }
+
+    const deletedReviews = await this.prisma.$transaction(async (tx) => {
+      const reviews = await tx.review.deleteMany({
+        where: { ownerId: userId },
+      });
+
+      await tx.reviewCommentMessage.deleteMany({ where: { fromId: userId } });
+      await tx.reviewCommentMessage.updateMany({
+        where: { toId: userId },
+        data: { toId: null },
+      });
+      await tx.reviewComment.updateMany({
+        where: { doneById: userId },
+        data: { doneById: null, doneAt: null },
+      });
+      await tx.reviewReviewer.deleteMany({ where: { userId } });
+      await tx.reviewCommitAck.deleteMany({ where: { userId } });
+      await tx.reviewFileView.deleteMany({ where: { userId } });
+      await tx.adminGrant.deleteMany({ where: { email: user.email } });
+
+      // Settings, profile image, notifications and the service account all
+      // cascade from this row.
+      await tx.user.delete({ where: { id: userId } });
+
+      return reviews.count;
+    });
+
+    this.logger.log(
+      `User deleted: ${user.email} (${deletedReviews} owned reviews removed)`,
+    );
+
+    return {
+      id: user.id,
+      email: user.email,
+      removed: true,
+      deletedReviews,
+    };
+  }
+
+  private async findUserOrThrow(userId: string): Promise<User> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
     if (!user) {
       throw new AppException(
         ErrorCode.USER_NOT_FOUND,
@@ -143,6 +269,52 @@ export class AdminService implements OnModuleInit {
         "User not found",
       );
     }
+
+    return user;
+  }
+
+  private async deletionBlocker(
+    currentUser: User,
+    user: User,
+  ): Promise<ErrorCode | null> {
+    if (user.id === currentUser.id) {
+      return ErrorCode.SELF_DELETION_FORBIDDEN;
+    }
+
+    if (user.firebaseUid) {
+      return ErrorCode.FIREBASE_USER_DELETION_FORBIDDEN;
+    }
+
+    const [grant, adminCount] = await Promise.all([
+      this.prisma.adminGrant.findUnique({ where: { email: user.email } }),
+      this.prisma.adminGrant.count(),
+    ]);
+
+    if (grant && adminCount <= 1) {
+      return ErrorCode.LAST_ADMIN_REMOVAL_FORBIDDEN;
+    }
+
+    return null;
+  }
+
+  private deletionBlockerMessage(blocker: ErrorCode): string {
+    switch (blocker) {
+      case ErrorCode.SELF_DELETION_FORBIDDEN:
+        return "You cannot delete your own account";
+      case ErrorCode.FIREBASE_USER_DELETION_FORBIDDEN:
+        return "Only users without a Firebase identity can be deleted";
+      case ErrorCode.LAST_ADMIN_REMOVAL_FORBIDDEN:
+        return "Cannot delete the last admin";
+      default:
+        return "User cannot be deleted";
+    }
+  }
+
+  async updateUserSettings(
+    userId: string,
+    dto: UpdateUserSettingsDto,
+  ): Promise<UserSettings> {
+    await this.findUserOrThrow(userId);
 
     return this.usersService.updateSettings(userId, dto);
   }

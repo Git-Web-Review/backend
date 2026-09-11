@@ -1,11 +1,35 @@
 import { Module } from "@nestjs/common";
+import { JwtModule } from "@nestjs/jwt";
 import { AdminGuard } from "./admin.guard";
-import { FirebaseAuthGuard } from "./firebase-auth.guard";
+import { AuthController } from "./auth.controller";
+import { AuthGuard } from "./auth.guard";
+import { FirebaseAuthService } from "./firebase-auth.service";
 import { FirebaseService } from "./firebase.service";
+import { InternalJwtService } from "./internal-jwt.service";
 import { RolesGuard } from "./roles.guard";
+import { ServiceAccountsController } from "./service-accounts.controller";
+import { ServiceAccountsService } from "./service-accounts.service";
 
 @Module({
-  providers: [FirebaseService, FirebaseAuthGuard, AdminGuard, RolesGuard],
-  exports: [FirebaseService, FirebaseAuthGuard, AdminGuard, RolesGuard],
+  imports: [JwtModule.register({})],
+  controllers: [AuthController, ServiceAccountsController],
+  providers: [
+    FirebaseService,
+    FirebaseAuthService,
+    InternalJwtService,
+    ServiceAccountsService,
+    AuthGuard,
+    AdminGuard,
+    RolesGuard,
+  ],
+  exports: [
+    FirebaseService,
+    FirebaseAuthService,
+    InternalJwtService,
+    ServiceAccountsService,
+    AuthGuard,
+    AdminGuard,
+    RolesGuard,
+  ],
 })
 export class AuthModule {}

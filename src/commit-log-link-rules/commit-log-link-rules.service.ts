@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
 import type { CommitLogLinkRule } from "@prisma/client";
 import { AppException } from "../common/app.exception";
+import { DeletionResponseDto } from "../common/dto/deletion-response.dto";
 import { ErrorCode } from "../common/error-code.enum";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateCommitLogLinkRuleDto } from "./dto/create-commit-log-link-rule.dto";
@@ -63,7 +64,7 @@ export class CommitLogLinkRulesService {
     return this.prisma.commitLogLinkRule.update({ where: { id }, data });
   }
 
-  async delete(id: string): Promise<{ id: string; deleted: boolean }> {
+  async delete(id: string): Promise<DeletionResponseDto> {
     await this.findOrThrow(id);
     await this.prisma.commitLogLinkRule.delete({ where: { id } });
     return { id, deleted: true };

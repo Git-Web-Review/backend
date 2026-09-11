@@ -1,6 +1,5 @@
 import {
   Body,
-  Controller,
   Delete,
   Get,
   Header,
@@ -9,31 +8,22 @@ import {
   Res,
   StreamableFile,
   UploadedFile,
-  UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import {
-  ApiBody,
-  ApiBearerAuth,
-  ApiConsumes,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from "@nestjs/swagger";
 import { User } from "@prisma/client";
 import { Response } from "express";
+import { ApiAuthenticatedController } from "../auth/api-controller.decorators";
 import { CurrentUser } from "../auth/current-user.decorator";
-import { FirebaseAuthGuard } from "../auth/firebase-auth.guard";
 import {
-  ApiAuthErrorResponses,
-  ApiNotFoundErrorResponse,
-  ApiValidationErrorResponse,
-} from "../common/swagger/api-error-responses";
+  ApiEndpoint,
+  ApiImageUpload,
+  ApiTag,
+  IMAGE_CONTENT,
+} from "../common/swagger";
 import { CurrentUserResponseDto } from "./dto/current-user-response.dto";
 import { ReviewerCandidatePageResponseDto } from "./dto/reviewer-candidate-page-response.dto";
 import { SearchReviewerCandidatesQueryDto } from "./dto/search-reviewer-candidates-query.dto";
-import { UploadProfileImageDto } from "./dto/upload-profile-image.dto";
 import { UpdateUserSettingsDto } from "./dto/update-user-settings.dto";
 import { UserProfileImageRemovalResponseDto } from "./dto/user-profile-image-removal-response.dto";
 import { UserProfileImageResponseDto } from "./dto/user-profile-image-response.dto";
@@ -42,30 +32,31 @@ import { profileImageMaxBytesFromValue } from "./profile-image.config";
 import type { UploadedProfileImageFile } from "./types/uploaded-profile-image-file";
 import { UsersService } from "./users.service";
 
-@ApiTags("users")
-@ApiBearerAuth()
-@ApiAuthErrorResponses()
-@UseGuards(FirebaseAuthGuard)
-@Controller("v1/me")
+@ApiAuthenticatedController(ApiTag.Users, "v1/me")
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @ApiOperation({ summary: "Get current authenticated user" })
-  @ApiOkResponse({
-    description: "Current user returned",
+  @ApiEndpoint({
+    summary: "Get current authenticated user",
+    description:
+      "Resolves whoever the bearer token belongs to, human or service account. Start here to learn the caller's `id` and `role`.",
+    response: "Current user returned",
     type: CurrentUserResponseDto,
+    notFound: true,
   })
-  @ApiNotFoundErrorResponse()
   getMe(@CurrentUser() user: User): Promise<CurrentUserResponseDto> {
     return this.usersService.getMe(user.id);
   }
 
   @Get("reviewer-candidates")
-  @ApiOperation({ summary: "Search users that can be selected as reviewers" })
-  @ApiOkResponse({
-    description: "Reviewer candidates returned",
+  @ApiEndpoint({
+    summary: "Search users that can be selected as reviewers",
+    description:
+      "Feeds the reviewer picker. The returned identifiers are what `reviewerUserIds` expects when creating or updating a review.",
+    response: "Reviewer candidates returned",
     type: ReviewerCandidatePageResponseDto,
+    validation: true,
   })
   listReviewerCandidates(
     @CurrentUser() user: User,
@@ -75,12 +66,14 @@ export class UsersController {
   }
 
   @Patch("settings")
-  @ApiOperation({ summary: "Update current user settings" })
-  @ApiOkResponse({
-    description: "User settings updated",
+  @ApiEndpoint({
+    summary: "Update current user settings",
+    description:
+      "Only the properties present in the body are changed; the rest keep their value.",
+    response: "User settings updated",
     type: UserSettingsResponseDto,
+    validation: true,
   })
-  @ApiValidationErrorResponse()
   updateSettings(
     @CurrentUser() user: User,
     @Body() dto: UpdateUserSettingsDto,
@@ -98,14 +91,14 @@ export class UsersController {
       },
     }),
   )
-  @ApiOperation({ summary: "Upload current user profile image" })
-  @ApiConsumes("multipart/form-data")
-  @ApiBody({ type: UploadProfileImageDto })
-  @ApiOkResponse({
-    description: "Profile image saved",
+  @ApiImageUpload()
+  @ApiEndpoint({
+    summary: "Upload current user profile image",
+    description: "Replaces the current avatar.",
+    response: "Profile image saved",
     type: UserProfileImageResponseDto,
+    validation: true,
   })
-  @ApiValidationErrorResponse()
   saveProfileImage(
     @CurrentUser() user: User,
     @UploadedFile() file?: UploadedProfileImageFile,
@@ -114,9 +107,13 @@ export class UsersController {
   }
 
   @Get("profile-image")
-  @ApiOperation({ summary: "Get current user profile image" })
-  @ApiOkResponse({ description: "Profile image bytes returned" })
-  @ApiNotFoundErrorResponse()
+  @ApiEndpoint({
+    summary: "Get current user profile image",
+    response:
+      "Raw image bytes, served with the stored `Content-Type`. Not JSON.",
+    content: IMAGE_CONTENT,
+    notFound: true,
+  })
   @Header("Cache-Control", "private, max-age=300")
   async getProfileImage(
     @CurrentUser() user: User,
@@ -130,9 +127,11 @@ export class UsersController {
   }
 
   @Delete("profile-image")
-  @ApiOperation({ summary: "Delete current user profile image" })
-  @ApiOkResponse({
-    description: "Profile image deleted",
+  @ApiEndpoint({
+    summary: "Delete current user profile image",
+    description:
+      "Succeeds even when there was no image, so it is safe to call blindly.",
+    response: "Profile image deleted",
     type: UserProfileImageRemovalResponseDto,
   })
   deleteProfileImage(

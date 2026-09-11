@@ -1,39 +1,27 @@
-import { Body, Controller, Get, Patch, Query, UseGuards } from "@nestjs/common";
-import {
-  ApiBearerAuth,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from "@nestjs/swagger";
+import { Body, Get, Patch, Query } from "@nestjs/common";
 import { User } from "@prisma/client";
+import { ApiAuthenticatedController } from "../auth/api-controller.decorators";
 import { CurrentUser } from "../auth/current-user.decorator";
-import { FirebaseAuthGuard } from "../auth/firebase-auth.guard";
-import {
-  ApiAuthErrorResponses,
-  ApiNotFoundErrorResponse,
-  ApiValidationErrorResponse,
-} from "../common/swagger/api-error-responses";
+import { ApiEndpoint, ApiTag } from "../common/swagger";
 import { BatchPayloadResponseDto } from "./dto/batch-payload-response.dto";
 import { ListNotificationsQueryDto } from "./dto/list-notifications-query.dto";
 import { MarkNotificationsSeenDto } from "./dto/mark-notifications-seen.dto";
 import { NotificationPageResponseDto } from "./dto/notification-page-response.dto";
 import { NotificationsService } from "./notifications.service";
 
-@ApiTags("notifications")
-@ApiBearerAuth()
-@ApiAuthErrorResponses()
-@UseGuards(FirebaseAuthGuard)
-@Controller("v1/notifications")
+@ApiAuthenticatedController(ApiTag.Notifications, "v1/notifications")
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Get()
-  @ApiOperation({ summary: "List current user notifications" })
-  @ApiOkResponse({
-    description: "Notifications returned",
+  @ApiEndpoint({
+    summary: "List current user notifications",
+    description:
+      "Newest first. Notifications are only ever visible to their recipient, so this is always scoped to the caller.",
+    response: "Notifications returned",
     type: NotificationPageResponseDto,
+    validation: true,
   })
-  @ApiValidationErrorResponse()
   list(
     @CurrentUser() user: User,
     @Query() query: ListNotificationsQueryDto,
@@ -42,13 +30,14 @@ export class NotificationsController {
   }
 
   @Patch("seen")
-  @ApiOperation({ summary: "Mark many notifications as seen" })
-  @ApiOkResponse({
-    description: "Notifications marked as seen",
+  @ApiEndpoint({
+    summary: "Mark many notifications as seen",
+    description:
+      "Identifiers that do not belong to the caller are skipped silently; `count` reports how many were actually updated.",
+    response: "Notifications marked as seen",
     type: BatchPayloadResponseDto,
+    validation: true,
   })
-  @ApiValidationErrorResponse()
-  @ApiNotFoundErrorResponse()
   markManySeen(
     @CurrentUser() user: User,
     @Body() dto: MarkNotificationsSeenDto,

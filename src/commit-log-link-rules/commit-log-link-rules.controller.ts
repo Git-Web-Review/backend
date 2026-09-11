@@ -1,46 +1,31 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Patch,
-  Post,
-  UseGuards,
-} from "@nestjs/common";
-import {
-  ApiBearerAuth,
-  ApiCreatedResponse,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from "@nestjs/swagger";
+import { Body, Delete, Get, Patch, Post } from "@nestjs/common";
 import { User, UserRole } from "@prisma/client";
-import { AdminGuard } from "../auth/admin.guard";
-import { CurrentUser } from "../auth/current-user.decorator";
-import { FirebaseAuthGuard } from "../auth/firebase-auth.guard";
 import {
-  ApiAdminErrorResponses,
-  ApiAuthErrorResponses,
-  ApiValidationErrorResponse,
-} from "../common/swagger/api-error-responses";
+  ApiAdminOnly,
+  ApiAuthenticatedController,
+} from "../auth/api-controller.decorators";
+import { CurrentUser } from "../auth/current-user.decorator";
+import { DeletionResponseDto } from "../common/dto/deletion-response.dto";
+import { ApiEndpoint, ApiTag, UuidParam } from "../common/swagger";
 import { CommitLogLinkRulesService } from "./commit-log-link-rules.service";
 import { CommitLogLinkRuleResponseDto } from "./dto/commit-log-link-rule-response.dto";
 import { CreateCommitLogLinkRuleDto } from "./dto/create-commit-log-link-rule.dto";
 import { UpdateCommitLogLinkRuleDto } from "./dto/update-commit-log-link-rule.dto";
 
-@ApiTags("commit-log-link-rules")
-@ApiBearerAuth()
-@ApiAuthErrorResponses()
-@UseGuards(FirebaseAuthGuard)
-@Controller("v1/commit-log-link-rules")
+/** Every signed-in user reads the rules; only admins change them. */
+@ApiAuthenticatedController(
+  ApiTag.CommitLogLinkRules,
+  "v1/commit-log-link-rules",
+)
 export class CommitLogLinkRulesController {
   constructor(private readonly rulesService: CommitLogLinkRulesService) {}
 
   @Get()
-  @ApiOperation({ summary: "List commit log link rules" })
-  @ApiOkResponse({
-    description: "Commit log link rules returned",
+  @ApiEndpoint({
+    summary: "List commit log link rules",
+    description:
+      "Patterns that turn references found in a commit message into links. Admins additionally see the inactive ones.",
+    response: "Commit log link rules returned",
     type: [CommitLogLinkRuleResponseDto],
   })
   list(@CurrentUser() user: User): Promise<CommitLogLinkRuleResponseDto[]> {
@@ -48,14 +33,14 @@ export class CommitLogLinkRulesController {
   }
 
   @Post()
-  @UseGuards(AdminGuard)
-  @ApiAdminErrorResponses()
-  @ApiOperation({ summary: "Create a commit log link rule" })
-  @ApiCreatedResponse({
-    description: "Commit log link rule created",
+  @ApiAdminOnly()
+  @ApiEndpoint({
+    summary: "Create a commit log link rule",
+    response: "Commit log link rule created",
     type: CommitLogLinkRuleResponseDto,
+    created: true,
+    validation: true,
   })
-  @ApiValidationErrorResponse()
   create(
     @Body() dto: CreateCommitLogLinkRuleDto,
   ): Promise<CommitLogLinkRuleResponseDto> {
@@ -63,27 +48,32 @@ export class CommitLogLinkRulesController {
   }
 
   @Patch(":id")
-  @UseGuards(AdminGuard)
-  @ApiAdminErrorResponses()
-  @ApiOperation({ summary: "Update a commit log link rule" })
-  @ApiOkResponse({
-    description: "Commit log link rule updated",
+  @ApiAdminOnly()
+  @ApiEndpoint({
+    summary: "Update a commit log link rule",
+    response: "Commit log link rule updated",
     type: CommitLogLinkRuleResponseDto,
+    validation: true,
+    notFound: true,
   })
-  @ApiValidationErrorResponse()
   update(
-    @Param("id") id: string,
+    @UuidParam("id", "Commit log link rule identifier") id: string,
     @Body() dto: UpdateCommitLogLinkRuleDto,
   ): Promise<CommitLogLinkRuleResponseDto> {
     return this.rulesService.update(id, dto);
   }
 
   @Delete(":id")
-  @UseGuards(AdminGuard)
-  @ApiAdminErrorResponses()
-  @ApiOperation({ summary: "Delete a commit log link rule" })
-  @ApiOkResponse({ description: "Commit log link rule deleted" })
-  delete(@Param("id") id: string): Promise<{ id: string; deleted: boolean }> {
+  @ApiAdminOnly()
+  @ApiEndpoint({
+    summary: "Delete a commit log link rule",
+    response: "Commit log link rule deleted",
+    type: DeletionResponseDto,
+    notFound: true,
+  })
+  delete(
+    @UuidParam("id", "Commit log link rule identifier") id: string,
+  ): Promise<DeletionResponseDto> {
     return this.rulesService.delete(id);
   }
 }
