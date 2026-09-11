@@ -1,6 +1,7 @@
 model GlobalSettings {
     id                               String   @id @default("global")
     allowedOAuthDomains              String[] @default([]) @map("allowed_oauth_domains")
+    appName                          String?  @map("app_name")
     notificationPurgeEnabled         Boolean  @default(false) @map("notification_purge_enabled")
     notificationPurgeIntervalMinutes Int      @default(60) @map("notification_purge_interval_minutes")
     notificationPurgeAfterDays       Int      @default(30) @map("notification_purge_after_days")

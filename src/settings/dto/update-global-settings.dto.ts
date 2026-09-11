@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
 } from "class-validator";
 
@@ -21,6 +22,18 @@ export class UpdateGlobalSettingsDto {
   @ArrayUnique()
   @IsString({ each: true })
   allowedOAuthDomains?: string[];
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: "Acme",
+    description:
+      "Custom application name shown in the top bar. Null or blank restores the default name.",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  appName?: string | null;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()

@@ -8,6 +8,9 @@ export class GlobalSettingsResponseDto implements GlobalSettings {
   @ApiProperty({ type: [String] })
   allowedOAuthDomains!: string[];
 
+  @ApiProperty({ type: String, nullable: true, example: "Acme" })
+  appName!: string | null;
+
   @ApiProperty()
   notificationPurgeEnabled!: boolean;
 
