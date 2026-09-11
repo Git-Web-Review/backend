@@ -55,6 +55,7 @@ export class NotificationPreferencesDto {
   @ValidateNested()
   @Type(() => NotificationMediumPreferencesDto)
   irc?: NotificationMediumPreferencesDto;
+
 }
 
 export class UpdateUserSettingsDto {
@@ -84,7 +85,11 @@ export class UpdateUserSettingsDto {
   @IsUrl({ require_tld: false })
   profileImageUrl?: string | null;
 
-  @ApiPropertyOptional({ enum: UserLocale, example: UserLocale.FR })
+  @ApiPropertyOptional({
+    enum: UserLocale,
+    enumName: "UserLocale",
+    example: UserLocale.FR,
+  })
   @IsOptional()
   @IsEnum(UserLocale)
   locale?: UserLocale;

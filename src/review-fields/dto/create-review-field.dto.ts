@@ -9,7 +9,11 @@ export class CreateReviewFieldDto {
   @MaxLength(120)
   name!: string;
 
-  @ApiProperty({ enum: ReviewFieldType, example: ReviewFieldType.LINK })
+  @ApiProperty({
+    enum: ReviewFieldType,
+    enumName: "ReviewFieldType",
+    example: ReviewFieldType.LINK,
+  })
   @IsEnum(ReviewFieldType)
   type!: ReviewFieldType;
 }

@@ -8,7 +8,7 @@ export class NotificationResponseDto implements Notification {
   @ApiProperty()
   userId!: string;
 
-  @ApiProperty({ enum: NotificationType })
+  @ApiProperty({ enum: NotificationType, enumName: "NotificationType" })
   type!: NotificationType;
 
   @ApiProperty({ type: Object })

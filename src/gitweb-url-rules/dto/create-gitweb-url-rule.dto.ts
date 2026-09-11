@@ -43,7 +43,7 @@ export class CreateGitwebUrlRuleDto {
   remoteTemplate?: string | null;
 
   @ApiPropertyOptional({
-    enum: GitwebUrlRuleKind,
+    enum: GitwebUrlRuleKind, enumName: "GitwebUrlRuleKind",
     default: GitwebUrlRuleKind.AUTO,
     description:
       "COMMIT or SUMMARY, or AUTO to resolve from the presence of a COMMIT_HASH group.",

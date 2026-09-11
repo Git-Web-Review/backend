@@ -1,4 +1,8 @@
 import { ApiProperty } from "@nestjs/swagger";
+import {
+  GITWEB_LINK_KINDS,
+  type GitwebLinkKind,
+} from "../../gitweb-url-rules/gitweb-link-kind";
 import { ReviewDiffResponseDto } from "./review-diff-file-response.dto";
 import { ReviewUserSummaryResponseDto } from "./review-user-summary-response.dto";
 
@@ -23,8 +27,13 @@ export class ReviewPreviewResponseDto {
   @ApiProperty()
   gitwebUrl!: string;
 
-  @ApiProperty({ enum: ["COMMIT", "SUMMARY"] })
-  linkKind!: "COMMIT" | "SUMMARY";
+  @ApiProperty({
+    enum: GITWEB_LINK_KINDS,
+    enumName: "GitwebLinkKind",
+    description:
+      "Whether the submitted link pointed at a single commit or at a branch summary.",
+  })
+  linkKind!: GitwebLinkKind;
 
   @ApiProperty({ type: () => [ReviewPreviewCommitOptionDto] })
   commitOptions!: ReviewPreviewCommitOptionDto[];

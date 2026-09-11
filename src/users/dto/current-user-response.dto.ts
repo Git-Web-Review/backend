@@ -16,7 +16,7 @@ export class CurrentUserResponseDto implements User {
   @ApiProperty()
   hostname!: string;
 
-  @ApiProperty({ enum: UserRole })
+  @ApiProperty({ enum: UserRole, enumName: "UserRole" })
   role!: UserRole;
 
   @ApiProperty()

@@ -21,7 +21,7 @@ export class ReviewCommentResponseDto {
   @ApiProperty({ type: Number, nullable: true })
   lineNumber!: number | null;
 
-  @ApiProperty({ enum: ReviewCommentSide })
+  @ApiProperty({ enum: ReviewCommentSide, enumName: "ReviewCommentSide" })
   side!: ReviewCommentSide;
 
   @ApiProperty({ type: () => ReviewUserSummaryResponseDto })

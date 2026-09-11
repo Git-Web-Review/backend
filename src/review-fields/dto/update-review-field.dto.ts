@@ -16,7 +16,7 @@ export class UpdateReviewFieldDto {
   @MaxLength(120)
   name?: string;
 
-  @ApiPropertyOptional({ enum: ReviewFieldType })
+  @ApiPropertyOptional({ enum: ReviewFieldType, enumName: "ReviewFieldType" })
   @IsOptional()
   @IsEnum(ReviewFieldType)
   type?: ReviewFieldType;

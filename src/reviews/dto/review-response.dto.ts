@@ -19,7 +19,7 @@ export class ReviewResponseDto implements Review {
   @ApiProperty({ type: String, nullable: true })
   description!: string | null;
 
-  @ApiProperty({ enum: ReviewStatus })
+  @ApiProperty({ enum: ReviewStatus, enumName: "ReviewStatus" })
   status!: ReviewStatus;
 
   @ApiProperty()

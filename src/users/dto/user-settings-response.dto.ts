@@ -11,7 +11,7 @@ export class UserSettingsResponseDto implements UserSettings {
   @ApiProperty({ type: String, nullable: true })
   profileImageUrl!: string | null;
 
-  @ApiProperty({ enum: UserLocale })
+  @ApiProperty({ enum: UserLocale, enumName: "UserLocale" })
   locale!: UserLocale;
 
   @ApiProperty()

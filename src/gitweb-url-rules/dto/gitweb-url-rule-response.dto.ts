@@ -18,7 +18,7 @@ export class GitwebUrlRuleResponseDto implements GitwebUrlRule {
   })
   remoteTemplate!: string | null;
 
-  @ApiProperty({ enum: GitwebUrlRuleKind })
+  @ApiProperty({ enum: GitwebUrlRuleKind, enumName: "GitwebUrlRuleKind" })
   linkKind!: GitwebUrlRuleKind;
 
   @ApiProperty()

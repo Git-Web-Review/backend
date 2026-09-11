@@ -1,11 +1,11 @@
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
-import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import type { NextFunction, Request, Response } from "express";
 import { json, urlencoded } from "express";
 import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module";
 import { AppExceptionFilter } from "./common/app-exception.filter";
+import { setupSwagger } from "./common/swagger/swagger.setup";
 
 function parseAllowedHosts(value: string | undefined): true | string[] | undefined {
   const hosts = value
@@ -84,17 +84,7 @@ async function bootstrap() {
     }),
   );
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle("git-web-review API")
-    .setDescription("Backend API for git-web-review")
-    .setVersion("0.1.0")
-    .addBearerAuth()
-    .build();
-
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup("api", app, document, {
-    swaggerOptions: { persistAuthorization: true },
-  });
+  setupSwagger(app);
 
   const frontendOrigin = process.env.FRONTEND_ORIGIN;
   app.enableCors({

@@ -8,7 +8,10 @@ export class ReviewSyncCommitPreviewDto {
   @ApiProperty()
   title!: string;
 
-  @ApiProperty({ enum: ReviewCommitChangeKind })
+  @ApiProperty({
+    enum: ReviewCommitChangeKind,
+    enumName: "ReviewCommitChangeKind",
+  })
   changeKind!: ReviewCommitChangeKind;
 
   @ApiProperty({ type: String, nullable: true })

@@ -28,7 +28,10 @@ export class CreateReviewCommentDto {
   @Min(1)
   lineNumber?: number | null;
 
-  @ApiPropertyOptional({ enum: ReviewCommentSide })
+  @ApiPropertyOptional({
+    enum: ReviewCommentSide,
+    enumName: "ReviewCommentSide",
+  })
   @IsOptional()
   @IsEnum(ReviewCommentSide)
   side?: ReviewCommentSide;

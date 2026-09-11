@@ -50,7 +50,7 @@ export class ReviewCommitResponseDto {
   @ApiProperty()
   title!: string;
 
-  @ApiProperty({ enum: ReviewCommitStatus })
+  @ApiProperty({ enum: ReviewCommitStatus, enumName: "ReviewCommitStatus" })
   status!: ReviewCommitStatus;
 
   @ApiProperty()
@@ -59,7 +59,11 @@ export class ReviewCommitResponseDto {
   @ApiProperty({ type: String, nullable: true })
   patchId!: string | null;
 
-  @ApiProperty({ enum: ReviewCommitChangeKind, nullable: true })
+  @ApiProperty({
+    enum: ReviewCommitChangeKind,
+    enumName: "ReviewCommitChangeKind",
+    nullable: true,
+  })
   changeKind!: ReviewCommitChangeKind | null;
 
   @ApiProperty()

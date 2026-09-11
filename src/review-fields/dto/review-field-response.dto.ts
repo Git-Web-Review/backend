@@ -8,7 +8,7 @@ export class ReviewFieldResponseDto implements ReviewFieldDefinition {
   @ApiProperty({ example: "Ticket" })
   name!: string;
 
-  @ApiProperty({ enum: ReviewFieldType })
+  @ApiProperty({ enum: ReviewFieldType, enumName: "ReviewFieldType" })
   type!: ReviewFieldType;
 
   @ApiProperty()
