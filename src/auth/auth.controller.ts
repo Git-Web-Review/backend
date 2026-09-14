@@ -1,4 +1,5 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from "@nestjs/common";
+import { ThrottleAuth } from "../common/throttling/throttling.module";
 import {
   ApiServiceUnavailableResponse,
   ApiTags,
@@ -18,6 +19,7 @@ export class AuthController {
 
   @Post("token")
   @HttpCode(HttpStatus.OK)
+  @ThrottleAuth()
   @ApiEndpoint({
     summary: "Exchange service account credentials for an internal token",
     description: [

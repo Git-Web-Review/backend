@@ -1,6 +1,7 @@
 import { Body, Delete, Get, Patch, Post, Put, Query } from "@nestjs/common";
 import { User } from "@prisma/client";
 import { ApiAuthenticatedController } from "../auth/api-controller.decorators";
+import { ThrottleGit } from "../common/throttling/throttling.module";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { DeletionResponseDto } from "../common/dto/deletion-response.dto";
 import { ApiEndpoint, ApiTag, UuidParam } from "../common/swagger";
@@ -53,6 +54,7 @@ export class ReviewsController {
   }
 
   @Post("preview")
+  @ThrottleGit()
   @ApiEndpoint({
     summary: "Preview extracted review data from a git-web link",
     description:
@@ -69,6 +71,7 @@ export class ReviewsController {
   }
 
   @Post()
+  @ThrottleGit()
   @ApiEndpoint({
     summary: "Create a review from a git-web link",
     description:
@@ -102,6 +105,7 @@ export class ReviewsController {
   }
 
   @Post(":id/sync/preview")
+  @ThrottleGit()
   @ApiEndpoint({
     summary:
       "Preview the branch changes that would produce a new review version",
@@ -119,6 +123,7 @@ export class ReviewsController {
   }
 
   @Post(":id/sync")
+  @ThrottleGit()
   @ApiEndpoint({
     summary: "Synchronize the review with its branch as a new version",
     description:

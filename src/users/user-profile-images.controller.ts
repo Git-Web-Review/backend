@@ -1,5 +1,6 @@
 import { Get, Header, Res, StreamableFile } from "@nestjs/common";
 import { Response } from "express";
+import { imageResponseHeaders } from "../common/image-upload";
 import { ApiAuthenticatedController } from "../auth/api-controller.decorators";
 import {
   ApiEndpoint,
@@ -33,7 +34,11 @@ export class UserProfileImagesController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<StreamableFile> {
     const profileImage = await this.usersService.getProfileImage(userId);
-    response.setHeader("Content-Type", profileImage.mimeType);
+    for (const [header, value] of Object.entries(
+      imageResponseHeaders(profileImage),
+    )) {
+      response.setHeader(header, value);
+    }
     response.setHeader("Content-Length", profileImage.sizeBytes.toString());
 
     return new StreamableFile(profileImage.data);

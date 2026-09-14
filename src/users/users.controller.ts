@@ -11,6 +11,7 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { imageResponseHeaders } from "../common/image-upload";
 import { User } from "@prisma/client";
 import { Response } from "express";
 import { ApiAuthenticatedController } from "../auth/api-controller.decorators";
@@ -120,7 +121,11 @@ export class UsersController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<StreamableFile> {
     const profileImage = await this.usersService.getProfileImage(user.id);
-    response.setHeader("Content-Type", profileImage.mimeType);
+    for (const [header, value] of Object.entries(
+      imageResponseHeaders(profileImage),
+    )) {
+      response.setHeader(header, value);
+    }
     response.setHeader("Content-Length", profileImage.sizeBytes.toString());
 
     return new StreamableFile(profileImage.data);

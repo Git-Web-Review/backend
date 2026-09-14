@@ -11,6 +11,7 @@ import {
   MaxLength,
   ValidateNested,
 } from "class-validator";
+import { IsSingleLine } from "../../common/validators/text.validators";
 
 export class CreateReviewFieldValueDto {
   @ApiProperty({ example: "9ad1e3de-a9af-4e2f-8d3d-4d6f6c85439a" })
@@ -42,6 +43,7 @@ export class CreateReviewDto {
   @IsOptional()
   @IsString()
   @MaxLength(400)
+  @IsSingleLine()
   title?: string;
 
   @ApiPropertyOptional({

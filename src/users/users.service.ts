@@ -7,21 +7,19 @@ import {
 } from "@prisma/client";
 import { AppException } from "../common/app.exception";
 import { ErrorCode } from "../common/error-code.enum";
+import {
+  detectImageFormat,
+  SUPPORTED_IMAGE_MIME_TYPES,
+} from "../common/image-upload";
 import { PrismaService } from "../prisma/prisma.service";
 import { ReviewerCandidatePageResponseDto } from "./dto/reviewer-candidate-page-response.dto";
 import { SearchReviewerCandidatesQueryDto } from "./dto/search-reviewer-candidates-query.dto";
 import { UserProfileImageRemovalResponseDto } from "./dto/user-profile-image-removal-response.dto";
 import { UserProfileImageResponseDto } from "./dto/user-profile-image-response.dto";
 import { UpdateUserSettingsDto } from "./dto/update-user-settings.dto";
+import { WebhookUrlService } from "./webhook-url.service";
 import { profileImageMaxBytesFromValue } from "./profile-image.config";
 import type { UploadedProfileImageFile } from "./types/uploaded-profile-image-file";
-
-const ALLOWED_PROFILE_IMAGE_MIME_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-]);
 
 export type UserWithSettings = Prisma.UserGetPayload<{
   include: {
@@ -61,6 +59,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly webhookUrls: WebhookUrlService,
   ) {}
 
   async getMe(userId: string): Promise<UserWithSettings> {
@@ -162,6 +161,11 @@ export class UsersService {
       );
     }
 
+    // Refuse tout de suite une cible que le relais abandonnerait en silence.
+    if (webhookUrl) {
+      await this.webhookUrls.assertAllowed(webhookUrl);
+    }
+
     return this.prisma.$transaction(async (tx) => {
       if (dto.hostname !== undefined) {
         await tx.user.update({
@@ -217,18 +221,19 @@ export class UsersService {
     file?: UploadedProfileImageFile,
   ): Promise<UserProfileImageResponseDto> {
     this.assertValidProfileImage(file);
+    const format = detectImageFormat(file.buffer)!;
     const imageBytes = this.bytesFromBuffer(file.buffer);
 
     const profileImage = await this.prisma.userProfileImage.upsert({
       where: { userId },
       update: {
-        mimeType: file.mimetype,
+        mimeType: format.mimeType,
         sizeBytes: file.size,
         data: imageBytes,
       },
       create: {
         userId,
-        mimeType: file.mimetype,
+        mimeType: format.mimeType,
         sizeBytes: file.size,
         data: imageBytes,
       },
@@ -278,11 +283,13 @@ export class UsersService {
       );
     }
 
-    if (!ALLOWED_PROFILE_IMAGE_MIME_TYPES.has(file.mimetype)) {
+    // The type comes from the bytes, never from the multipart header, which the
+    // client chooses freely.
+    if (!detectImageFormat(file.buffer)) {
       throw new AppException(
         ErrorCode.INVALID_PROFILE_IMAGE,
         HttpStatus.BAD_REQUEST,
-        "Profile image must be a JPEG, PNG, WebP or GIF file",
+        `Profile image must be one of: ${SUPPORTED_IMAGE_MIME_TYPES.join(", ")}`,
       );
     }
 

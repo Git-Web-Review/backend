@@ -9,6 +9,7 @@ import { GitwebUrlRulesModule } from "./gitweb-url-rules/gitweb-url-rules.module
 import { HealthModule } from "./health/health.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { ThrottlingModule } from "./common/throttling/throttling.module";
 import { RedisModule } from "./redis/redis.module";
 import { ReviewFieldsModule } from "./review-fields/review-fields.module";
 import { ReviewsModule } from "./reviews/reviews.module";
@@ -55,6 +56,7 @@ import { UsersModule } from "./users/users.module";
         },
       },
     }),
+    ThrottlingModule,
     PrismaModule,
     RedisModule,
     AuthModule,

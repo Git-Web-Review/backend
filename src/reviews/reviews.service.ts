@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { HttpStatus, Injectable } from "@nestjs/common";
+import { HttpStatus, Injectable, Logger } from "@nestjs/common";
 import {
   NotificationType,
   Prisma,
@@ -17,6 +17,16 @@ import {
 } from "@prisma/client";
 import { AppException } from "../common/app.exception";
 import { ErrorCode } from "../common/error-code.enum";
+import { placeholderFirebaseUid } from "../common/placeholder-user";
+import {
+  assertGitHostAllowed,
+  assertSafeRemoteUrl,
+  gitEnvironment,
+  GIT_HARDENING_ARGS,
+  isProcessError,
+  parseAllowedGitHosts,
+  Semaphore,
+} from "./git-command";
 import { DeletionResponseDto } from "../common/dto/deletion-response.dto";
 import type { GitwebLinkKind } from "../gitweb-url-rules/gitweb-link-kind";
 import { GitwebUrlRulesService } from "../gitweb-url-rules/gitweb-url-rules.service";
@@ -159,12 +169,35 @@ type ReviewCommentWithMessages = Prisma.ReviewCommentGetPayload<{
 }>;
 
 const execFileAsync = promisify(execFile);
+/** Per commit message: past this it is not a reviewer list any more. */
+const MAX_REVIEWER_EMAILS_PER_COMMIT = 20;
+
+const allowedGitHosts = parseAllowedGitHosts(process.env.GIT_ALLOWED_HOSTS);
+
+/** Concurrent git operations, all callers together. */
+const gitConcurrency = new Semaphore(
+  Math.max(1, Number(process.env.GIT_MAX_CONCURRENT ?? 4) || 4),
+);
+
+const gitTimeoutMs = Math.max(
+  5_000,
+  Number(process.env.GIT_TIMEOUT_MS ?? 120_000) || 120_000,
+);
+
+/** Deliberately permissive: it rejects nonsense, not unusual addresses. */
+function isPlausibleEmail(value: string): boolean {
+  return (
+    value.length <= 254 &&
+    /^[^\s@<>,;"']+@[^\s@<>,;"'.]+(?:\.[^\s@<>,;"'.]+)+$/.test(value)
+  );
+}
 const gitCacheDirectory =
   process.env.GIT_WEB_REVIEW_GIT_CACHE_DIR ?? "/tmp/git-web-review/repos";
-const placeholderFirebaseUidPrefix = "placeholder:";
 
 @Injectable()
 export class ReviewsService {
+  private readonly logger = new Logger(ReviewsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
@@ -1947,8 +1980,8 @@ export class ReviewsService {
     }
 
     return new Promise((resolve) => {
-      const child = spawn("git", ["patch-id", "--stable"], {
-        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      const child = spawn("git", [...GIT_HARDENING_ARGS, "patch-id", "--stable"], {
+        env: gitEnvironment(),
       });
       let stdout = "";
       child.stdout.setEncoding("utf8");
@@ -1970,9 +2003,9 @@ export class ReviewsService {
     stdin: string,
   ): Promise<string> {
     return new Promise((resolve, reject) => {
-      const env = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
-      const first = spawn("git", firstArgs, { env });
-      const second = spawn("git", secondArgs, { env });
+      const env = gitEnvironment();
+      const first = spawn("git", [...GIT_HARDENING_ARGS, ...firstArgs], { env });
+      const second = spawn("git", [...GIT_HARDENING_ARGS, ...secondArgs], { env });
       let stdout = "";
       let stderr = "";
       second.stdout.setEncoding("utf8");
@@ -2259,9 +2292,19 @@ export class ReviewsService {
       where: { id: ownerId },
       select: { email: true },
     });
-    const reviewerEmails = uniqueEmails.filter(
-      (email) => email !== owner?.email.toLowerCase(),
-    );
+    const allowedDomains = await this.allowedEmailDomains();
+    const reviewerEmails = uniqueEmails
+      .filter((email) => email !== owner?.email.toLowerCase())
+      .filter((email) => isPlausibleEmail(email))
+      // The domain check applied at sign-in but not here: an out-of-domain
+      // address cannot sign in, yet it still created a row and could receive
+      // notifications.
+      .filter(
+        (email) =>
+          allowedDomains.length === 0 ||
+          allowedDomains.includes(email.split("@")[1] ?? ""),
+      )
+      .slice(0, MAX_REVIEWER_EMAILS_PER_COMMIT);
 
     await Promise.all(
       reviewerEmails.map((email) =>
@@ -2269,7 +2312,7 @@ export class ReviewsService {
           where: { email },
           update: {},
           create: {
-            firebaseUid: `${placeholderFirebaseUidPrefix}${email}`,
+            firebaseUid: placeholderFirebaseUid(email),
             email,
             hostname: email.split("@")[0] ?? email,
           },
@@ -2282,6 +2325,17 @@ export class ReviewsService {
       select: userSummarySelect,
       orderBy: { email: "asc" },
     });
+  }
+
+  private async allowedEmailDomains(): Promise<string[]> {
+    const settings = await this.prisma.globalSettings.findUnique({
+      where: { id: "global" },
+      select: { allowedOAuthDomains: true },
+    });
+
+    return (settings?.allowedOAuthDomains ?? []).map((domain) =>
+      domain.toLowerCase(),
+    );
   }
 
   private async notifyReviewers(
@@ -2633,8 +2687,7 @@ export class ReviewsService {
         snapshot: this.snapshotFromMetadata(metadata, null),
       };
     } catch (error) {
-      const fetchError =
-        error instanceof Error ? error.message : "Fetch failed";
+      const fetchError = this.userFacingFetchError(error, gitwebUrl);
       return {
         ...baseMetadata,
         snapshot: this.snapshotFromMetadata(baseMetadata, null),
@@ -2644,8 +2697,37 @@ export class ReviewsService {
     }
   }
 
+  /**
+   * What the user is allowed to read from a failed fetch.
+   *
+   * Git's stderr describes what it found — host reachable or not, repository
+   * present or not, port open or filtered — at an address the caller chose.
+   * Returning it turned review creation into an internal network probe. Our own
+   * messages, on the other hand, are useful and safe.
+   */
+  private userFacingFetchError(error: unknown, gitwebUrl: string): string {
+    if (isProcessError(error)) {
+      this.logger.warn(
+        `git failed for ${gitwebUrl}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return "Could not read this repository. Check the URL, then ask an administrator to look at the backend logs.";
+    }
+
+    return error instanceof Error ? error.message : "Fetch failed";
+  }
+
   private async metadataFromUrl(gitwebUrl: string): Promise<GitwebMetadata> {
     const parsed = await this.gitwebUrlRules.parseGitwebUrl(gitwebUrl);
+
+    // The one place where the URL an admin template produced becomes a git
+    // argument: this is where a transport that would run a command is refused.
+    if (parsed.remoteUrl) {
+      assertSafeRemoteUrl(parsed.remoteUrl);
+      assertGitHostAllowed(parsed.remoteUrl, allowedGitHosts);
+    }
+
     const { linkKind } = parsed;
     // A COMMIT-kind URL whose HEAD capture is not a hash (e.g.
     // a=commitdiff;h=master) points at the tip of that branch: use it as the
@@ -2866,6 +2948,8 @@ export class ReviewsService {
   }
 
   private async ensureGitCache(remoteUrl: string): Promise<string> {
+    assertSafeRemoteUrl(remoteUrl);
+
     const repoKey = createHash("sha256").update(remoteUrl).digest("hex");
     const repoPath = join(gitCacheDirectory, `${repoKey}.git`);
 
@@ -2879,15 +2963,21 @@ export class ReviewsService {
     return repoPath;
   }
 
-  private async runGit(args: string[]): Promise<string> {
-    const { stdout } = await execFileAsync("git", args, {
-      encoding: "utf8",
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-      maxBuffer: 50 * 1024 * 1024,
-      timeout: 120000,
-    });
+  private runGit(args: string[]): Promise<string> {
+    return gitConcurrency.run(async () => {
+      const { stdout } = await execFileAsync(
+        "git",
+        [...GIT_HARDENING_ARGS, ...args],
+        {
+          encoding: "utf8",
+          env: gitEnvironment(),
+          maxBuffer: 50 * 1024 * 1024,
+          timeout: gitTimeoutMs,
+        },
+      );
 
-    return stdout;
+      return stdout;
+    });
   }
 
   private parseGitPatch(patch: string): ReviewDiffResponseDto["files"] {
@@ -3124,6 +3214,13 @@ export class ReviewsService {
     };
   }
 
+  /**
+   * The addresses in the trailers of a commit message, which comes from a
+   * repository the caller chose. Each one creates a `User` row if it does not
+   * exist, so the count is capped and the format checked: a 20,000-character
+   * message could otherwise create hundreds of accounts in one request, from
+   * addresses that were not addresses.
+   */
   private extractReviewerEmails(text?: string | null): string[] {
     if (!text) {
       return [];
@@ -3132,8 +3229,16 @@ export class ReviewsService {
     const reviewerEmails = new Set<string>();
     const trailerRegex =
       /^(?:Reviewer|Reviewers|Reviewed-by|Acked-by|Tested-by|Cc|To):\s*[^<\n]*<([^>\n]+)>/gim;
+
     for (const match of text.matchAll(trailerRegex)) {
-      reviewerEmails.add(match[1].trim().toLowerCase());
+      const email = match[1].trim().toLowerCase();
+      if (isPlausibleEmail(email)) {
+        reviewerEmails.add(email);
+      }
+
+      if (reviewerEmails.size >= MAX_REVIEWER_EMAILS_PER_COMMIT) {
+        break;
+      }
     }
 
     return [...reviewerEmails];

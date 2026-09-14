@@ -1,5 +1,6 @@
 import { Get, Header, Res, StreamableFile } from "@nestjs/common";
 import { Response } from "express";
+import { imageResponseHeaders } from "../common/image-upload";
 import { ApiAuthenticatedController } from "../auth/api-controller.decorators";
 import { ApiEndpoint, ApiTag, IMAGE_CONTENT } from "../common/swagger";
 import { BrandingResponseDto } from "./dto/branding-response.dto";
@@ -39,7 +40,9 @@ export class BrandingController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<StreamableFile> {
     const logo = await this.settingsService.getAppLogo();
-    response.setHeader("Content-Type", logo.mimeType);
+    for (const [header, value] of Object.entries(imageResponseHeaders(logo))) {
+      response.setHeader(header, value);
+    }
     response.setHeader("Content-Length", logo.sizeBytes.toString());
 
     return new StreamableFile(logo.data);

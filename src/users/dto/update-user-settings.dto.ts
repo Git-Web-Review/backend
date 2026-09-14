@@ -10,6 +10,7 @@ import {
   MaxLength,
   ValidateNested,
 } from "class-validator";
+import { IsIrcTarget, IsSingleLine } from "../../common/validators/text.validators";
 
 export class NotificationMediumPreferencesDto {
   @ApiPropertyOptional({ example: true })
@@ -68,6 +69,7 @@ export class UpdateUserSettingsDto {
   @IsOptional()
   @IsString()
   @MaxLength(80)
+  @IsSingleLine()
   nickname?: string | null;
 
   @ApiPropertyOptional({
@@ -118,6 +120,7 @@ export class UpdateUserSettingsDto {
   @IsOptional()
   @IsString()
   @MaxLength(80)
+  @IsIrcTarget()
   ircNickname?: string | null;
 
   @ApiPropertyOptional({ example: true })

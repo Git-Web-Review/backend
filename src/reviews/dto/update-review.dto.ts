@@ -7,6 +7,7 @@ import {
   IsUUID,
   MaxLength,
 } from "class-validator";
+import { IsSingleLine } from "../../common/validators/text.validators";
 
 export class UpdateReviewDto {
   @ApiPropertyOptional({
@@ -23,6 +24,7 @@ export class UpdateReviewDto {
   @IsOptional()
   @IsString()
   @MaxLength(400)
+  @IsSingleLine()
   title?: string;
 
   @ApiPropertyOptional({

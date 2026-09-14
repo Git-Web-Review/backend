@@ -8,6 +8,7 @@ import {
   Min,
 } from "class-validator";
 import { ReviewCommentSide } from "@prisma/client";
+import { IsPlainText } from "../../common/validators/text.validators";
 
 export class CreateReviewCommentDto {
   @ApiPropertyOptional({ type: String, nullable: true })
@@ -39,5 +40,6 @@ export class CreateReviewCommentDto {
   @ApiProperty({ example: "This should handle the error path too." })
   @IsString()
   @MaxLength(10000)
+  @IsPlainText()
   message!: string;
 }

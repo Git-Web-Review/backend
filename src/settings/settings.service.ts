@@ -3,6 +3,10 @@ import { ConfigService } from "@nestjs/config";
 import type { AppLogo, GlobalSettings } from "@prisma/client";
 import { AppException } from "../common/app.exception";
 import { ErrorCode } from "../common/error-code.enum";
+import {
+  detectImageFormat,
+  SUPPORTED_IMAGE_MIME_TYPES,
+} from "../common/image-upload";
 import { PrismaService } from "../prisma/prisma.service";
 import { appLogoMaxBytesFromValue } from "./app-logo.config";
 import { AppLogoRemovalResponseDto } from "./dto/app-logo-removal-response.dto";
@@ -13,14 +17,6 @@ import type { UploadedAppLogoFile } from "./types/uploaded-app-logo-file";
 
 const GLOBAL_SETTINGS_ID = "global";
 const APP_LOGO_ID = "global";
-
-const ALLOWED_APP_LOGO_MIME_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "image/svg+xml",
-]);
 
 const APP_LOGO_SUMMARY_SELECT = {
   mimeType: true,
@@ -92,9 +88,10 @@ export class SettingsService {
 
   async saveAppLogo(file?: UploadedAppLogoFile): Promise<AppLogoResponseDto> {
     this.assertValidAppLogo(file);
+    const format = detectImageFormat(file.buffer)!;
     const logoBytes = this.bytesFromBuffer(file.buffer);
     const data = {
-      mimeType: file.mimetype,
+      mimeType: format.mimeType,
       sizeBytes: file.size,
       data: logoBytes,
     };
@@ -139,11 +136,13 @@ export class SettingsService {
       );
     }
 
-    if (!ALLOWED_APP_LOGO_MIME_TYPES.has(file.mimetype)) {
+    // SVG is no longer accepted: it is an active format, and the logo is served
+    // straight back by GET /v1/branding/logo.
+    if (!detectImageFormat(file.buffer)) {
       throw new AppException(
         ErrorCode.INVALID_APP_LOGO,
         HttpStatus.BAD_REQUEST,
-        "Application logo must be a JPEG, PNG, WebP, GIF or SVG file",
+        `Application logo must be one of: ${SUPPORTED_IMAGE_MIME_TYPES.join(", ")}`,
       );
     }
 

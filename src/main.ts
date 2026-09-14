@@ -1,7 +1,9 @@
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import type { NextFunction, Request, Response } from "express";
 import { json, urlencoded } from "express";
+import helmet from "helmet";
 import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module";
 import { AppExceptionFilter } from "./common/app-exception.filter";
@@ -52,12 +54,13 @@ function isHostAllowed(requestHost: string, allowedHosts: string[]): boolean {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
     bodyParser: false,
   });
 
-  app.useLogger(app.get(Logger));
+  const logger = app.get(Logger);
+  app.useLogger(logger);
   app.useGlobalFilters(new AppExceptionFilter());
 
   const allowedHosts = parseAllowedHosts(process.env.BACKEND_ALLOWED_HOSTS);
@@ -74,6 +77,27 @@ async function bootstrap() {
     });
   }
 
+  // Behind a reverse proxy, `request.ip` is the proxy's address and the rate
+  // limit counts everyone together. Only enable it when a trusted proxy really
+  // rewrites X-Forwarded-For: otherwise anyone picks their own address, and so
+  // their own counter.
+  const trustProxy = process.env.TRUST_PROXY?.trim();
+  if (trustProxy && trustProxy !== "false") {
+    const hops = Number(trustProxy);
+    app.set("trust proxy", Number.isInteger(hops) && hops > 0 ? hops : trustProxy);
+  }
+
+  // CSP disabled globally: the API returns JSON, and Swagger UI needs inline
+  // scripts and styles. The few routes that return user-supplied bytes set their
+  // own, far stricter policy.
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+    }),
+  );
+
   app.use(json({ limit: "10mb" }));
   app.use(urlencoded({ extended: true, limit: "10mb" }));
   app.useGlobalPipes(
@@ -84,9 +108,34 @@ async function bootstrap() {
     }),
   );
 
-  setupSwagger(app);
+  // The documentation publishes the whole API surface: routes, DTOs, role
+  // semantics. Useful in development, pointless to hand out in production.
+  const swaggerEnabled =
+    process.env.SWAGGER_ENABLED?.trim().toLowerCase() === "true" ||
+    process.env.NODE_ENV !== "production";
+  if (swaggerEnabled) {
+    setupSwagger(app);
+  } else {
+    logger.log("Swagger is disabled (set SWAGGER_ENABLED=true to serve it)");
+  }
 
-  const frontendOrigin = process.env.FRONTEND_ORIGIN;
+  // An empty origin fell back to `true`, which reflects the caller's origin and
+  // so allows every site. The impact stays limited — the API authenticates with
+  // a token, not a cookie — but it is a layer lost for no reason, and
+  // docker-compose always supplies a value.
+  const frontendOrigin = process.env.FRONTEND_ORIGIN?.trim();
+  if (!frontendOrigin) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "FRONTEND_ORIGIN is required in production: refusing to accept requests from every origin",
+      );
+    }
+
+    logger.warn(
+      "FRONTEND_ORIGIN is not set, accepting every origin. Never do this outside development.",
+    );
+  }
+
   app.enableCors({
     origin: frontendOrigin ? frontendOrigin.split(",") : true,
   });
