@@ -161,7 +161,7 @@ export class UsersService {
       );
     }
 
-    // Refuse tout de suite une cible que le relais abandonnerait en silence.
+    // Refuse right away a target the relay would otherwise drop in silence.
     if (webhookUrl) {
       await this.webhookUrls.assertAllowed(webhookUrl);
     }

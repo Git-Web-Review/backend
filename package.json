@@ -35,7 +35,7 @@
         "class-validator": "^0.14.4",
         "dotenv": "^17.4.2",
         "express": "^5.2.1",
-        "firebase-admin": "^13.7.0",
+        "firebase-admin": "^14.4.0",
         "helmet": "^8.3.0",
         "ioredis": "^5.10.1",
         "nestjs-pino": "^4.6.1",
@@ -49,7 +49,7 @@
     },
     "devDependencies": {
         "@nestjs/cli": "^11.0.17",
-        "@swc/cli": "^0.7.10",
+        "@swc/cli": "^0.8.1",
         "@swc/core": "^1.15.21",
         "@types/express": "^5.0.6",
         "@types/node": "^25.5.0",
@@ -59,6 +59,15 @@
         "typescript": "^6.0.2"
     },
     "overrides": {
-        "multer": "^2.4.0"
+        "multer": "^2.4.0",
+        "@prisma/config": {
+            "deepmerge-ts": "^8.0.2"
+        },
+        "prisma": {
+            "mysql2": "^3.24.4"
+        },
+        "gaxios@6": {
+            "uuid": "^11.1.1"
+        }
     }
 }

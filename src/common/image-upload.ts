@@ -43,7 +43,7 @@ const SIGNATURES: Signature[] = [
       startsWith(bytes, [0x47, 0x49, 0x46, 0x38, 0x39, 0x61]),
   },
   {
-    // RIFF....WEBP : le conteneur RIFF porte la taille entre les deux marqueurs.
+    // RIFF....WEBP: the RIFF container carries the size between the two markers.
     mimeType: "image/webp",
     extension: "webp",
     matches: (bytes) =>

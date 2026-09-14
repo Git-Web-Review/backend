@@ -3,8 +3,8 @@ import { Transform } from "class-transformer";
 import { Matches } from "class-validator";
 
 /**
- * Validations de texte pour les champs qui ressortent de l'application par un
- * protocole en lignes.
+ * Text validation for fields that leave the application through a line-based
+ * protocol.
  *
  * The authoritative gate is in the IRC relay, which sanitises right before the
  * socket: only it also sees rows already in the database and text that came from
@@ -59,7 +59,7 @@ export function IsPlainText(): PropertyDecorator {
   );
 }
 
-/** Pseudo ou canal IRC utilisable comme cible d'un PRIVMSG. */
+/** An IRC nickname or channel usable as a PRIVMSG target. */
 export function IsIrcTarget(): PropertyDecorator {
   return applyDecorators(
     Matches(IRC_TARGET, {
