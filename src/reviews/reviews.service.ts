@@ -70,6 +70,8 @@ type GitwebMetadata = {
   remoteUrl: string | null;
   sourceProject: string | null;
   sourceBranch: string | null;
+  // False when sourceBranch is the "master" fallback, not named by the URL.
+  sourceBranchFromUrl: boolean;
   sourceCommit: string | null;
   reviewerEmails: string[];
   commitOptions: GitCommitOption[];
@@ -1580,14 +1582,16 @@ export class ReviewsService {
   }
 
   /**
-   * Resolves the branch to synchronize from. Reviews created from a commit
-   * link store a "master" fallback branch, so the stored value cannot be
-   * trusted blindly: prefer the remote branch whose tip currently is (or
-   * recently was) one of the review commits.
+   * Resolves the branch to synchronize from. The branch named by the review
+   * URL wins, then the stored branch shown on the review. Reviews created
+   * from a commit link store a "master" fallback branch, which is only kept
+   * when master actually carries the review commits; otherwise prefer the
+   * remote branch whose tip currently is (or recently was) one of them.
    */
   private async resolveSyncBranch(
     review: ReviewWithRelations,
     remoteUrl: string,
+    urlBranch: string | null,
   ): Promise<string | null> {
     const reviewHashes = new Set(review.commits.map((commit) => commit.hash));
     if (review.sourceCommit) {
@@ -1612,28 +1616,13 @@ export class ReviewsService {
     } catch {
       refs = [];
     }
+    const existsRemotely = (branch: string) =>
+      refs.length === 0 || refs.some((ref) => ref.branch === branch);
 
-    // Best case: a branch tip is exactly one of the review commits.
-    const tipMatch = refs.find((ref) => reviewHashes.has(ref.hash));
-    if (tipMatch) {
-      return tipMatch.branch;
+    if (urlBranch && existsRemotely(urlBranch)) {
+      return urlBranch;
     }
 
-    // The stored branch is trustworthy when it still exists remotely and
-    // is not the master fallback.
-    const storedBranch = review.sourceBranch;
-    if (
-      storedBranch &&
-      storedBranch !== "master" &&
-      (refs.length === 0 || refs.some((ref) => ref.branch === storedBranch))
-    ) {
-      return storedBranch;
-    }
-
-    // Last resort: find the branch whose commits ahead of master best
-    // overlap the review commits. Patch-id (content) outranks titles:
-    // successive versions of the same series usually share commit titles,
-    // but only the current branch still has identical patches.
     const oldPatchIds = await this.ensureCommitPatchIds(review.commits);
     const reviewPatchIds = new Set(
       [...oldPatchIds.values()].filter((patchId): patchId is string =>
@@ -1641,6 +1630,43 @@ export class ReviewsService {
       ),
     );
     const reviewTitles = new Set(review.commits.map((commit) => commit.title));
+    const overlapScores = async (branch: string) => {
+      try {
+        return await this.branchOverlapScores(
+          remoteUrl,
+          branch,
+          reviewHashes,
+          reviewPatchIds,
+          reviewTitles,
+        );
+      } catch {
+        return null;
+      }
+    };
+
+    // The stored branch is trustworthy when it still exists remotely, unless
+    // it is the master fallback of a commit link that master does not carry.
+    const storedBranch = review.sourceBranch;
+    if (storedBranch && existsRemotely(storedBranch)) {
+      if (storedBranch !== "master") {
+        return storedBranch;
+      }
+      const scores = await overlapScores(storedBranch);
+      if (scores && (scores.patchIdScore > 0 || scores.titleScore > 0)) {
+        return storedBranch;
+      }
+    }
+
+    // A branch tip is exactly one of the review commits.
+    const tipMatch = refs.find((ref) => reviewHashes.has(ref.hash));
+    if (tipMatch) {
+      return tipMatch.branch;
+    }
+
+    // Last resort: find the branch whose commits ahead of master best
+    // overlap the review commits. Patch-id (content) outranks titles:
+    // successive versions of the same series usually share commit titles,
+    // but only the current branch still has identical patches.
     let bestBranch: string | null = null;
     let bestPatchIdScore = 0;
     let bestTitleScore = 0;
@@ -1648,40 +1674,18 @@ export class ReviewsService {
       .filter((ref) => ref.branch !== "master")
       .slice(0, 25);
     for (const ref of candidates) {
-      try {
-        const { options } = await this.fetchGitBranchCommitOptions(
-          remoteUrl,
-          ref.branch,
-        );
-        const missing = options.filter(
-          (option) => !reviewHashes.has(option.hash),
-        );
-        let patchIdScore = options.length - missing.length;
-        let titleScore = 0;
-        if (missing.length && reviewPatchIds.size) {
-          const branchPatchIds = await this.fetchBranchPatchIds(
-            await this.ensureGitCache(remoteUrl),
-            missing.map((option) => option.hash),
-          );
-          for (const option of missing) {
-            const patchId = branchPatchIds.get(option.hash);
-            if (patchId && reviewPatchIds.has(patchId)) {
-              patchIdScore += 1;
-            } else if (reviewTitles.has(option.title)) {
-              titleScore += 1;
-            }
-          }
-        }
-        if (
-          patchIdScore > bestPatchIdScore ||
-          (patchIdScore === bestPatchIdScore && titleScore > bestTitleScore)
-        ) {
-          bestPatchIdScore = patchIdScore;
-          bestTitleScore = titleScore;
-          bestBranch = ref.branch;
-        }
-      } catch {
+      const scores = await overlapScores(ref.branch);
+      if (!scores) {
         continue;
+      }
+      const { patchIdScore, titleScore } = scores;
+      if (
+        patchIdScore > bestPatchIdScore ||
+        (patchIdScore === bestPatchIdScore && titleScore > bestTitleScore)
+      ) {
+        bestPatchIdScore = patchIdScore;
+        bestTitleScore = titleScore;
+        bestBranch = ref.branch;
       }
     }
     if (bestBranch) {
@@ -1689,6 +1693,41 @@ export class ReviewsService {
     }
 
     return storedBranch;
+  }
+
+  /**
+   * Counts the branch commits ahead of origin/master that match the review:
+   * same hash or patch-id (content) first, else same title.
+   */
+  private async branchOverlapScores(
+    remoteUrl: string,
+    branch: string,
+    reviewHashes: Set<string>,
+    reviewPatchIds: Set<string>,
+    reviewTitles: Set<string>,
+  ): Promise<{ patchIdScore: number; titleScore: number }> {
+    const { options } = await this.fetchGitBranchCommitOptions(
+      remoteUrl,
+      branch,
+    );
+    const missing = options.filter((option) => !reviewHashes.has(option.hash));
+    let patchIdScore = options.length - missing.length;
+    let titleScore = 0;
+    if (missing.length && reviewPatchIds.size) {
+      const branchPatchIds = await this.fetchBranchPatchIds(
+        await this.ensureGitCache(remoteUrl),
+        missing.map((option) => option.hash),
+      );
+      for (const option of missing) {
+        const patchId = branchPatchIds.get(option.hash);
+        if (patchId && reviewPatchIds.has(patchId)) {
+          patchIdScore += 1;
+        } else if (reviewTitles.has(option.title)) {
+          titleScore += 1;
+        }
+      }
+    }
+    return { patchIdScore, titleScore };
   }
 
   private async computeSyncPlan(
@@ -1704,7 +1743,11 @@ export class ReviewsService {
       );
     }
 
-    const branch = await this.resolveSyncBranch(review, metadata.remoteUrl);
+    const branch = await this.resolveSyncBranch(
+      review,
+      metadata.remoteUrl,
+      metadata.sourceBranchFromUrl ? metadata.sourceBranch : null,
+    );
     if (!branch) {
       throw new AppException(
         ErrorCode.UNKNOWN_ERROR,
@@ -2734,6 +2777,10 @@ export class ReviewsService {
     // source branch for later branch resolution instead of a commit hash.
     const headAsBranch =
       linkKind === "COMMIT" && !parsed.commitHash ? parsed.head : null;
+    const urlBranch =
+      linkKind === "SUMMARY"
+        ? (parsed.head ?? parsed.branch)
+        : (parsed.branch ?? headAsBranch);
 
     return {
       linkKind,
@@ -2743,10 +2790,8 @@ export class ReviewsService {
       rawHtml: null,
       remoteUrl: parsed.remoteUrl,
       sourceProject: parsed.project,
-      sourceBranch:
-        linkKind === "SUMMARY"
-          ? (parsed.head ?? parsed.branch ?? "master")
-          : (parsed.branch ?? headAsBranch ?? "master"),
+      sourceBranch: urlBranch ?? "master",
+      sourceBranchFromUrl: Boolean(urlBranch),
       sourceCommit: linkKind === "SUMMARY" ? null : parsed.commitHash,
       reviewerEmails: [],
       commitOptions: [],
