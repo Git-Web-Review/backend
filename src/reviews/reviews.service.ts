@@ -34,6 +34,7 @@ import { GitwebUrlRulesService } from "../gitweb-url-rules/gitweb-url-rules.serv
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ProjectDefaultReviewersService } from "../project-default-reviewers/project-default-reviewers.service";
+import { AddReviewReviewersDto } from "./dto/add-review-reviewers.dto";
 import { CreateReviewCommentDto } from "./dto/create-review-comment.dto";
 import { CreateReviewCommentMessageDto } from "./dto/create-review-comment-message.dto";
 import { CreateReviewDto } from "./dto/create-review.dto";
@@ -1269,6 +1270,43 @@ export class ReviewsService {
   }
 
   /**
+   * Adds reviewers without touching the ones already there, so a reviewer can
+   * bring someone in but never take anyone out.
+   */
+  async addReviewers(
+    user: User,
+    reviewId: string,
+    dto: AddReviewReviewersDto,
+  ): Promise<ReviewResponseDto> {
+    const existingReview = await this.findReviewOrThrow(reviewId);
+    this.assertIsOwnerOrReviewer(
+      user,
+      existingReview,
+      "Only the review owner or reviewers can add reviewers",
+    );
+
+    const existingReviewerIds = new Set(
+      existingReview.reviewers.map((reviewer) => reviewer.userId),
+    );
+    const addedReviewerIds = (
+      await this.validReviewerUserIds(dto.userIds, existingReview.ownerId)
+    ).filter((userId) => !existingReviewerIds.has(userId));
+
+    if (addedReviewerIds.length === 0) {
+      return this.toResponse(existingReview);
+    }
+
+    await this.prisma.reviewReviewer.createMany({
+      data: addedReviewerIds.map((userId) => ({ reviewId, userId })),
+      skipDuplicates: true,
+    });
+    const review = await this.findReviewOrThrow(reviewId);
+
+    await this.notifyReviewers(review, addedReviewerIds);
+    return this.toResponse(review);
+  }
+
+  /**
    * Titre d'une review dérivé de sa série : nom de la branche si elle n'est
    * pas master, sinon titre du commit le plus ancien.
    */
@@ -2189,6 +2227,18 @@ export class ReviewsService {
     user: User,
     review: ReviewWithRelations,
   ): void {
+    this.assertIsOwnerOrReviewer(
+      user,
+      review,
+      "Only the review owner or reviewers can mark comments as done",
+    );
+  }
+
+  private assertIsOwnerOrReviewer(
+    user: User,
+    review: ReviewWithRelations,
+    message: string,
+  ): void {
     if (
       review.ownerId === user.id ||
       review.reviewers.some((reviewer) => reviewer.userId === user.id)
@@ -2199,7 +2249,7 @@ export class ReviewsService {
     throw new AppException(
       ErrorCode.ROLE_FORBIDDEN,
       HttpStatus.FORBIDDEN,
-      "Only the review owner or reviewers can mark comments as done",
+      message,
     );
   }
 

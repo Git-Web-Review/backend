@@ -5,6 +5,7 @@ import { ThrottleGit } from "../common/throttling/throttling.module";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { DeletionResponseDto } from "../common/dto/deletion-response.dto";
 import { ApiEndpoint, ApiTag, UuidParam } from "../common/swagger";
+import { AddReviewReviewersDto } from "./dto/add-review-reviewers.dto";
 import { CreateReviewCommentDto } from "./dto/create-review-comment.dto";
 import { CreateReviewCommentMessageDto } from "./dto/create-review-comment-message.dto";
 import { CreateReviewDto } from "./dto/create-review.dto";
@@ -424,6 +425,25 @@ export class ReviewsController {
     @UuidParam("id", REVIEW_ID) id: string,
   ): Promise<ReviewResponseDto> {
     return this.reviewsService.close(user, id);
+  }
+
+  @Post(":id/reviewers")
+  @ApiEndpoint({
+    summary: "Add reviewers to a review",
+    description:
+      "Open to the owner and to the reviewers of the review. Users already reviewing are kept as they are, the owner is ignored, and only the reviewers actually added are notified. Removing a reviewer stays with the owner, through `PATCH /v1/reviews/{id}`.",
+    response: "Reviewers added",
+    type: ReviewResponseDto,
+    validation: true,
+    notFound: true,
+    forbidden: "The caller is neither the owner nor a reviewer of the review",
+  })
+  addReviewers(
+    @CurrentUser() user: User,
+    @UuidParam("id", REVIEW_ID) id: string,
+    @Body() dto: AddReviewReviewersDto,
+  ): Promise<ReviewResponseDto> {
+    return this.reviewsService.addReviewers(user, id, dto);
   }
 
   @Patch(":id")
