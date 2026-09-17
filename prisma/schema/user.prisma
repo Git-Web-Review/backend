@@ -18,6 +18,7 @@ model User {
     commentsSent     ReviewCommentMessage[] @relation("comment_from")
     commentsReceived ReviewCommentMessage[] @relation("comment_to")
     commentsDone     ReviewComment[]        @relation("comment_done_by")
+    defaultReviewFor ProjectDefaultReviewer[]
 
     @@map("users")
 }

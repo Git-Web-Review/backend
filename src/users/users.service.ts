@@ -36,7 +36,7 @@ export type UserWithSettings = Prisma.UserGetPayload<{
   };
 }>;
 
-const userSummarySelect = {
+export const userSummarySelect = {
   id: true,
   email: true,
   hostname: true,
@@ -52,7 +52,24 @@ const userSummarySelect = {
   profileImage: { select: { userId: true } },
 } satisfies Prisma.UserSelect;
 
-type UserSummary = Prisma.UserGetPayload<{ select: typeof userSummarySelect }>;
+export type UserSummary = Prisma.UserGetPayload<{
+  select: typeof userSummarySelect;
+}>;
+
+export function toUserSummary(user: UserSummary) {
+  return {
+    id: user.id,
+    email: user.email,
+    hostname: user.hostname,
+    nickname: user.settings?.nickname ?? null,
+    mailNotificationsEnabled: user.settings?.mailNotificationsEnabled ?? false,
+    ircNotificationsEnabled: user.settings?.ircNotificationsEnabled ?? false,
+    webhookNotificationsEnabled:
+      user.settings?.webhookNotificationsEnabled ?? false,
+    hasProfileImage: !!user.profileImage,
+    profileImageUrl: user.settings?.profileImageUrl ?? null,
+  };
+}
 
 @Injectable()
 export class UsersService {
@@ -98,7 +115,10 @@ export class UsersService {
     const limit = query.limit ?? 10;
     const search = query.q?.trim();
     const excludedUserIds = [
-      ...new Set([currentUserId, ...(query.excludeUserIds ?? [])]),
+      ...new Set([
+        ...(query.includeSelf ? [] : [currentUserId]),
+        ...(query.excludeUserIds ?? []),
+      ]),
     ];
     const where: Prisma.UserWhereInput = {
       id: { notIn: excludedUserIds },
@@ -131,7 +151,7 @@ export class UsersService {
     ]);
 
     return {
-      items: users.map((user) => this.toUserSummary(user)),
+      items: users.map((user) => toUserSummary(user)),
       page,
       limit,
       total,
@@ -326,21 +346,5 @@ export class UsersService {
 
   private requiredText(value?: string | null): string {
     return value?.trim() ?? "";
-  }
-
-  private toUserSummary(user: UserSummary) {
-    return {
-      id: user.id,
-      email: user.email,
-      hostname: user.hostname,
-      nickname: user.settings?.nickname ?? null,
-      mailNotificationsEnabled:
-        user.settings?.mailNotificationsEnabled ?? false,
-      ircNotificationsEnabled: user.settings?.ircNotificationsEnabled ?? false,
-      webhookNotificationsEnabled:
-        user.settings?.webhookNotificationsEnabled ?? false,
-      hasProfileImage: !!user.profileImage,
-      profileImageUrl: user.settings?.profileImageUrl ?? null,
-    };
   }
 }

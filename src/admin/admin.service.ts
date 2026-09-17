@@ -240,8 +240,8 @@ export class AdminService implements OnModuleInit {
       await tx.reviewFileView.deleteMany({ where: { userId } });
       await tx.adminGrant.deleteMany({ where: { email: user.email } });
 
-      // Settings, profile image, notifications and the service account all
-      // cascade from this row.
+      // Settings, profile image, notifications, project default reviewer
+      // entries and the service account all cascade from this row.
       await tx.user.delete({ where: { id: userId } });
 
       return reviews.count;

@@ -48,6 +48,8 @@ export class CreateReviewDto {
 
   @ApiPropertyOptional({
     type: [String],
+    description:
+      "The project's default reviewers are added to these, without being listed.",
     example: ["9ad1e3de-a9af-4e2f-8d3d-4d6f6c85439a"],
   })
   @IsOptional()

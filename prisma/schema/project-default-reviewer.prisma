@@ -1,0 +1,12 @@
+/// A reviewer added to every new review of a project. `project` is the bare
+/// repository name, the same value reviews store in `source_project`.
+model ProjectDefaultReviewer {
+    id        String   @id @default(uuid())
+    project   String
+    userId    String   @map("user_id")
+    user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+    createdAt DateTime @default(now()) @map("created_at")
+
+    @@unique([project, userId])
+    @@map("project_default_reviewers")
+}

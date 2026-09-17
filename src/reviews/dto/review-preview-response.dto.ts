@@ -68,6 +68,13 @@ export class ReviewPreviewResponseDto {
   @ApiProperty({ type: () => [ReviewUserSummaryResponseDto] })
   reviewerUsers!: ReviewUserSummaryResponseDto[];
 
+  @ApiProperty({
+    type: () => [ReviewUserSummaryResponseDto],
+    description:
+      "The project's default reviewers. Creating the review adds them whatever `reviewerUserIds` holds.",
+  })
+  defaultReviewerUsers!: ReviewUserSummaryResponseDto[];
+
   @ApiProperty({ type: () => ReviewDiffResponseDto })
   gitDiff!: ReviewDiffResponseDto;
 }

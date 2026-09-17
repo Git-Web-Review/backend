@@ -2,6 +2,7 @@ import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform, Type } from "class-transformer";
 import {
   IsArray,
+  IsBoolean,
   IsInt,
   IsOptional,
   IsString,
@@ -41,4 +42,16 @@ export class SearchReviewerCandidatesQueryDto {
   @IsArray()
   @IsUUID("4", { each: true })
   excludeUserIds?: string[];
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      "Also return the caller, who is left out otherwise: an admin can be a project's default reviewer.",
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === "true" ? true : value === "false" ? false : value,
+  )
+  @IsBoolean()
+  includeSelf?: boolean = false;
 }

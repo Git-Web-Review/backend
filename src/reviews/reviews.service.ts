@@ -33,6 +33,7 @@ import type { GitwebLinkKind } from "../gitweb-url-rules/gitweb-link-kind";
 import { GitwebUrlRulesService } from "../gitweb-url-rules/gitweb-url-rules.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { ProjectDefaultReviewersService } from "../project-default-reviewers/project-default-reviewers.service";
 import { CreateReviewCommentDto } from "./dto/create-review-comment.dto";
 import { CreateReviewCommentMessageDto } from "./dto/create-review-comment-message.dto";
 import { CreateReviewDto } from "./dto/create-review.dto";
@@ -205,6 +206,7 @@ export class ReviewsService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly gitwebUrlRules: GitwebUrlRulesService,
+    private readonly projectDefaultReviewers: ProjectDefaultReviewersService,
   ) {}
 
   async dashboard(
@@ -274,6 +276,15 @@ export class ReviewsService {
       gitwebMetadata.reviewerEmails,
       user.id,
     );
+    const defaultReviewerUserIds = await this.projectDefaultReviewers.userIdsFor(
+      gitwebMetadata.sourceProject,
+      user.id,
+    );
+    const defaultReviewerUsers = await this.prisma.user.findMany({
+      where: { id: { in: defaultReviewerUserIds } },
+      select: userSummarySelect,
+      orderBy: { email: "asc" },
+    });
 
     return {
       gitwebUrl: dto.gitwebUrl,
@@ -294,6 +305,9 @@ export class ReviewsService {
       reviewerUsers: reviewerUsers.map((reviewer) =>
         this.toUserSummary(reviewer),
       ),
+      defaultReviewerUsers: defaultReviewerUsers.map((reviewer) =>
+        this.toUserSummary(reviewer),
+      ),
       gitDiff: gitwebMetadata.gitDiff,
     };
   }
@@ -302,7 +316,7 @@ export class ReviewsService {
     ownerId: string,
     dto: CreateReviewDto,
   ): Promise<ReviewResponseDto> {
-    const reviewerUserIds = await this.validReviewerUserIds(
+    const requestedReviewerUserIds = await this.validReviewerUserIds(
       dto.reviewerUserIds ?? [],
       ownerId,
     );
@@ -310,6 +324,16 @@ export class ReviewsService {
       dto.fieldValues,
     );
     const gitwebMetadata = await this.fetchGitwebMetadata(dto.gitwebUrl);
+    // The project's default reviewers join whatever the caller asked for.
+    const reviewerUserIds = [
+      ...new Set([
+        ...requestedReviewerUserIds,
+        ...(await this.projectDefaultReviewers.userIdsFor(
+          gitwebMetadata.sourceProject,
+          ownerId,
+        )),
+      ]),
+    ];
     const commitCreates = await this.commitCreatesFromMetadata(
       gitwebMetadata,
       dto.commitHashes,
