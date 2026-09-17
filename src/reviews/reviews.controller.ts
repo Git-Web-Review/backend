@@ -181,7 +181,7 @@ export class ReviewsController {
   @ApiEndpoint({
     summary: "Add a review comment",
     description:
-      "Opens a new thread, either on the review as a whole or anchored to a line of a commit diff.",
+      "Opens a new thread, either on the review as a whole or anchored to a line of a commit diff. Users mentioned as `@<user id>` are notified, and those not on the review yet are added as reviewers.",
     response: "Review comment added",
     type: ReviewCommentResponseDto,
     created: true,
@@ -199,7 +199,8 @@ export class ReviewsController {
   @Post(":id/comments/:commentId/messages")
   @ApiEndpoint({
     summary: "Reply to a review comment conversation",
-    description: "Returns every thread on the review, not just the one replied to.",
+    description:
+      "Returns every thread on the review, not just the one replied to. Users mentioned as `@<user id>` are notified, and those not on the review yet are added as reviewers.",
     response: "Review comment reply added",
     type: [ReviewCommentResponseDto],
     created: true,
@@ -218,6 +219,8 @@ export class ReviewsController {
   @Patch(":id/comments/:commentId/messages/:messageId")
   @ApiEndpoint({
     summary: "Edit a review comment message owned by the current user",
+    description:
+      "Only the users the edit newly mentions are notified and, when not on the review yet, added as reviewers.",
     response: "Review comment message updated",
     type: [ReviewCommentResponseDto],
     validation: true,

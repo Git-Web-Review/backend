@@ -7,6 +7,7 @@ export const NOTIFICATION_CATEGORIES = [
   "reviewAcked",
   "reviewClosed",
   "commentReceived",
+  "commentMention",
 ] as const;
 
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
@@ -26,6 +27,8 @@ export function notificationCategory(
       return "reviewDone";
     case NotificationType.COMMENT_RECEIVED:
       return "commentReceived";
+    case NotificationType.COMMENT_MENTION:
+      return "commentMention";
     case NotificationType.REVIEW_STATUS_CHANGED: {
       const nextStatus =
         payload && typeof payload === "object" && "nextStatus" in payload

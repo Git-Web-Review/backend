@@ -36,8 +36,18 @@ export class ReviewCommentResponseDto {
   @ApiProperty({ type: String, format: "date-time", nullable: true })
   doneAt!: Date | null;
 
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      "Markdown text. A mention is written `@<user id>`; its user is listed in `mentions`.",
+  })
   message!: string;
+
+  @ApiProperty({
+    type: () => [ReviewUserSummaryResponseDto],
+    description:
+      "Users the message mentions, in order of first mention. An id matching no user is left out.",
+  })
+  mentions!: ReviewUserSummaryResponseDto[];
 
   @ApiProperty()
   createdAt!: Date;

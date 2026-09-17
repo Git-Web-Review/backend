@@ -55,6 +55,7 @@ import { SyncReviewDto } from "./dto/sync-review.dto";
 import { UpdateReviewCommentMessageDto } from "./dto/update-review-comment-message.dto";
 import { UpdateReviewCommentDto } from "./dto/update-review-comment.dto";
 import { UpdateReviewDto } from "./dto/update-review.dto";
+import { mentionedUserIds, replaceMentions } from "./mentions";
 
 type GitCommitOption = {
   hash: string;
@@ -172,6 +173,12 @@ type ReviewWithRelations = Prisma.ReviewGetPayload<{
 type ReviewCommentWithMessages = Prisma.ReviewCommentGetPayload<{
   include: typeof reviewCommentInclude;
 }>;
+
+type CommentLocation = {
+  commitHash: string | null;
+  filePath: string | null;
+  lineNumber: number | null;
+};
 
 const execFileAsync = promisify(execFile);
 /** Per commit message: past this it is not a reviewer list any more. */
@@ -521,7 +528,7 @@ export class ReviewsService {
       include: reviewCommentInclude,
     });
 
-    return comments.flatMap((comment) => this.toCommentResponses(comment));
+    return this.toCommentResponses(comments);
   }
 
   async addComment(
@@ -559,9 +566,22 @@ export class ReviewsService {
     });
 
     await this.updateReviewStatusAfterComment(user, review);
-    await this.notifyCommentReceived(review, comment, message, user.id);
+    const mentionedRecipientIds = await this.notifyMentionedUsers(
+      review,
+      comment,
+      message,
+      null,
+      user.id,
+    );
+    await this.notifyCommentReceived(
+      review,
+      comment,
+      message,
+      user.id,
+      mentionedRecipientIds,
+    );
 
-    return this.toCommentResponses(comment)[0];
+    return (await this.toCommentResponses([comment]))[0];
   }
 
   async addCommentMessage(
@@ -611,9 +631,22 @@ export class ReviewsService {
     });
 
     await this.updateReviewStatusAfterComment(user, review);
-    await this.notifyCommentReceived(review, updatedComment, message, user.id);
+    const mentionedRecipientIds = await this.notifyMentionedUsers(
+      review,
+      updatedComment,
+      message,
+      null,
+      user.id,
+    );
+    await this.notifyCommentReceived(
+      review,
+      updatedComment,
+      message,
+      user.id,
+      mentionedRecipientIds,
+    );
 
-    return this.toCommentResponses(updatedComment);
+    return this.toCommentResponses([updatedComment]);
   }
 
   async updateComment(
@@ -647,7 +680,7 @@ export class ReviewsService {
 
     await this.refreshReviewStatusFromComments(reviewId, user.id);
 
-    return this.toCommentResponses(updatedComment);
+    return this.toCommentResponses([updatedComment]);
   }
 
   async deleteComment(
@@ -763,7 +796,7 @@ export class ReviewsService {
       where: { id: commentId, reviewId },
       select: {
         id: true,
-        messages: { select: { id: true, fromId: true } },
+        messages: { select: { id: true, fromId: true, message: true } },
       },
     });
     if (!comment) {
@@ -801,7 +834,15 @@ export class ReviewsService {
       include: reviewCommentInclude,
     });
 
-    return this.toCommentResponses(updatedComment);
+    await this.notifyMentionedUsers(
+      review,
+      updatedComment,
+      nextMessage,
+      message.message,
+      user.id,
+    );
+
+    return this.toCommentResponses([updatedComment]);
   }
 
   async acknowledgeCommit(
@@ -2572,17 +2613,106 @@ export class ReviewsService {
     );
   }
 
+  /**
+   * Notifies the users a message mentions, bringing those who are not on the
+   * review yet in as reviewers. On an edit, users the previous text already
+   * mentioned were handled back then and are left alone. Returns who was
+   * notified.
+   */
+  private async notifyMentionedUsers(
+    review: ReviewWithRelations,
+    comment: CommentLocation,
+    message: string,
+    previousMessage: string | null,
+    actorUserId: string,
+  ): Promise<string[]> {
+    const alreadyMentionedIds = new Set(
+      previousMessage === null ? [] : mentionedUserIds(previousMessage),
+    );
+    const candidateIds = mentionedUserIds(message).filter(
+      (userId) => userId !== actorUserId && !alreadyMentionedIds.has(userId),
+    );
+    if (candidateIds.length === 0) {
+      return [];
+    }
+
+    // An id matching no user stays plain text: nobody to notify.
+    const existingUsers = await this.prisma.user.findMany({
+      where: { id: { in: candidateIds } },
+      select: { id: true },
+    });
+    const existingIds = new Set(existingUsers.map((user) => user.id));
+    const recipientIds = candidateIds.filter((userId) =>
+      existingIds.has(userId),
+    );
+    if (recipientIds.length === 0) {
+      return [];
+    }
+
+    const reviewerIds = new Set(
+      review.reviewers.map((reviewer) => reviewer.userId),
+    );
+    const addedReviewerIds = new Set(
+      recipientIds.filter(
+        (userId) => userId !== review.ownerId && !reviewerIds.has(userId),
+      ),
+    );
+    if (addedReviewerIds.size > 0) {
+      await this.prisma.reviewReviewer.createMany({
+        data: [...addedReviewerIds].map((userId) => ({
+          reviewId: review.id,
+          userId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorUserId },
+      select: userSummarySelect,
+    });
+    const payload = {
+      reviewId: review.id,
+      title: review.title,
+      gitwebUrl: review.gitwebUrl,
+      ownerEmail: review.owner.email,
+      sourceProject: review.sourceProject,
+      sourceBranch: review.sourceBranch,
+      sourceCommit: review.sourceCommit,
+      gitwebTitle: review.gitwebTitle,
+      commitHash: comment.commitHash,
+      filePath: comment.filePath,
+      lineNumber: comment.lineNumber,
+      commentExcerpt: await this.commentExcerpt(message),
+      actorEmail: actor?.email ?? null,
+      actorNickname: actor?.settings?.nickname ?? null,
+    } satisfies Prisma.InputJsonObject;
+
+    await Promise.all(
+      recipientIds.map((userId) =>
+        this.notifications.createForUser(
+          userId,
+          NotificationType.COMMENT_MENTION,
+          { ...payload, addedAsReviewer: addedReviewerIds.has(userId) },
+        ),
+      ),
+    );
+
+    return recipientIds;
+  }
+
+  /** The owner is spared this one when the message mentions them already. */
   private async notifyCommentReceived(
     review: ReviewWithRelations,
-    comment: {
-      commitHash: string | null;
-      filePath: string | null;
-      lineNumber: number | null;
-    },
+    comment: CommentLocation,
     message: string,
     actorUserId: string,
+    mentionedRecipientIds: string[],
   ): Promise<void> {
-    if (review.ownerId === actorUserId) {
+    if (
+      review.ownerId === actorUserId ||
+      mentionedRecipientIds.includes(review.ownerId)
+    ) {
       return;
     }
 
@@ -2602,8 +2732,7 @@ export class ReviewsService {
       commitHash: comment.commitHash,
       filePath: comment.filePath,
       lineNumber: comment.lineNumber,
-      commentExcerpt:
-        message.length > 300 ? `${message.slice(0, 300)}...` : message,
+      commentExcerpt: await this.commentExcerpt(message),
       actorEmail: actor?.email ?? null,
       actorNickname: actor?.settings?.nickname ?? null,
     } satisfies Prisma.InputJsonObject;
@@ -2692,24 +2821,69 @@ export class ReviewsService {
     };
   }
 
-  private toCommentResponses(
-    comment: ReviewCommentWithMessages,
-  ): ReviewCommentResponseDto[] {
-    return comment.messages.map((message) => ({
-      id: message.id,
-      commentId: comment.id,
-      reviewId: comment.reviewId,
-      commitHash: comment.commitHash,
-      filePath: comment.filePath,
-      lineNumber: comment.lineNumber,
-      side: comment.side,
-      author: this.toUserSummary(message.from),
-      done: comment.done,
-      doneBy: comment.doneBy ? this.toUserSummary(comment.doneBy) : null,
-      doneAt: comment.doneAt,
-      message: message.message,
-      createdAt: message.createdAt,
-    }));
+  private async toCommentResponses(
+    comments: ReviewCommentWithMessages[],
+  ): Promise<ReviewCommentResponseDto[]> {
+    const mentionedUsersById = await this.mentionedUsersById(
+      comments.flatMap((comment) =>
+        comment.messages.map((message) => message.message),
+      ),
+    );
+
+    return comments.flatMap((comment) =>
+      comment.messages.map((message) => ({
+        id: message.id,
+        commentId: comment.id,
+        reviewId: comment.reviewId,
+        commitHash: comment.commitHash,
+        filePath: comment.filePath,
+        lineNumber: comment.lineNumber,
+        side: comment.side,
+        author: this.toUserSummary(message.from),
+        done: comment.done,
+        doneBy: comment.doneBy ? this.toUserSummary(comment.doneBy) : null,
+        doneAt: comment.doneAt,
+        message: message.message,
+        mentions: mentionedUserIds(message.message).flatMap((userId) => {
+          const mentionedUser = mentionedUsersById.get(userId);
+          return mentionedUser ? [this.toUserSummary(mentionedUser)] : [];
+        }),
+        createdAt: message.createdAt,
+      })),
+    );
+  }
+
+  /** Every user the messages mention, in one query. */
+  private async mentionedUsersById(
+    messages: string[],
+  ): Promise<Map<string, UserSummary>> {
+    const userIds = [...new Set(messages.flatMap(mentionedUserIds))];
+    if (userIds.length === 0) {
+      return new Map();
+    }
+
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: userSummarySelect,
+    });
+    return new Map(users.map((user) => [user.id, user]));
+  }
+
+  /** A message as notifications quote it: mentions named, then cut short. */
+  private async commentExcerpt(message: string): Promise<string> {
+    const mentionedUsers = await this.mentionedUsersById([message]);
+    const text = replaceMentions(
+      message,
+      new Map(
+        [...mentionedUsers].map(([userId, mentionedUser]) => [
+          userId,
+          mentionedUser.settings?.nickname ||
+            mentionedUser.hostname ||
+            mentionedUser.email,
+        ]),
+      ),
+    );
+    return text.length > 300 ? `${text.slice(0, 300)}...` : text;
   }
 
   private toUserSummary(user: UserSummary) {

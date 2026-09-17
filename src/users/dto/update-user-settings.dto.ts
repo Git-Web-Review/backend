@@ -42,6 +42,11 @@ export class NotificationMediumPreferencesDto {
   @IsOptional()
   @IsBoolean()
   commentReceived?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  commentMention?: boolean;
 }
 
 export class NotificationPreferencesDto {
