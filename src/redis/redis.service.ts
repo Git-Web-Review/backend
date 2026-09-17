@@ -18,11 +18,6 @@ export class RedisService implements OnModuleDestroy {
     await this.publisher.publish(channel, JSON.stringify(data));
   }
 
-  async setNx(key: string, ttlSeconds: number): Promise<boolean> {
-    const result = await this.publisher.set(key, "1", "EX", ttlSeconds, "NX");
-    return result === "OK";
-  }
-
   onModuleDestroy() {
     this.publisher.disconnect();
   }

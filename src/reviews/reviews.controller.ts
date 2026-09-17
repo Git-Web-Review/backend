@@ -25,7 +25,12 @@ import { SyncReviewDto } from "./dto/sync-review.dto";
 import { UpdateReviewCommentMessageDto } from "./dto/update-review-comment-message.dto";
 import { UpdateReviewCommentDto } from "./dto/update-review-comment.dto";
 import { UpdateReviewDto } from "./dto/update-review.dto";
+import { ReviewClosingService } from "./review-closing.service";
+import { ReviewCommentsService } from "./review-comments.service";
+import { ReviewFieldValuesService } from "./review-field-values.service";
+import { ReviewProgressService } from "./review-progress.service";
 import { ReviewsService } from "./reviews.service";
+import { ReviewSyncService } from "./sync/review-sync.service";
 
 /** Path parameter descriptions, written once for the twenty routes using them. */
 const REVIEW_ID = "Review identifier";
@@ -36,7 +41,14 @@ const FIELD_ID = "Identifier of a review field definition";
 
 @ApiAuthenticatedController(ApiTag.Reviews, "v1/reviews")
 export class ReviewsController {
-  constructor(private readonly reviewsService: ReviewsService) {}
+  constructor(
+    private readonly reviewsService: ReviewsService,
+    private readonly commentsService: ReviewCommentsService,
+    private readonly progressService: ReviewProgressService,
+    private readonly closingService: ReviewClosingService,
+    private readonly syncService: ReviewSyncService,
+    private readonly fieldValuesService: ReviewFieldValuesService,
+  ) {}
 
   @Get("dashboard")
   @ApiEndpoint({
@@ -120,7 +132,7 @@ export class ReviewsController {
     @CurrentUser() user: User,
     @UuidParam("id", REVIEW_ID) id: string,
   ): Promise<ReviewSyncPreviewResponseDto> {
-    return this.reviewsService.syncPreview(user, id);
+    return this.syncService.syncPreview(user, id);
   }
 
   @Post(":id/sync")
@@ -139,7 +151,7 @@ export class ReviewsController {
     @UuidParam("id", REVIEW_ID) id: string,
     @Body() dto: SyncReviewDto,
   ): Promise<ReviewResponseDto> {
-    return this.reviewsService.sync(user, id, dto);
+    return this.syncService.sync(user, id, dto);
   }
 
   @Put(":id/fields/:fieldId")
@@ -158,7 +170,7 @@ export class ReviewsController {
     @UuidParam("fieldId", FIELD_ID) fieldId: string,
     @Body() dto: SetReviewFieldValueDto,
   ): Promise<ReviewResponseDto> {
-    return this.reviewsService.setFieldValue(user, id, fieldId, dto);
+    return this.fieldValuesService.setFieldValue(user, id, fieldId, dto);
   }
 
   @Get(":id/comments")
@@ -174,7 +186,7 @@ export class ReviewsController {
     @CurrentUser() user: User,
     @UuidParam("id", REVIEW_ID) id: string,
   ): Promise<ReviewCommentResponseDto[]> {
-    return this.reviewsService.listComments(user, id);
+    return this.commentsService.listComments(user, id);
   }
 
   @Post(":id/comments")
@@ -193,7 +205,7 @@ export class ReviewsController {
     @UuidParam("id", REVIEW_ID) id: string,
     @Body() dto: CreateReviewCommentDto,
   ): Promise<ReviewCommentResponseDto> {
-    return this.reviewsService.addComment(user, id, dto);
+    return this.commentsService.addComment(user, id, dto);
   }
 
   @Post(":id/comments/:commentId/messages")
@@ -213,7 +225,7 @@ export class ReviewsController {
     @UuidParam("commentId", COMMENT_ID) commentId: string,
     @Body() dto: CreateReviewCommentMessageDto,
   ): Promise<ReviewCommentResponseDto[]> {
-    return this.reviewsService.addCommentMessage(user, id, commentId, dto);
+    return this.commentsService.addCommentMessage(user, id, commentId, dto);
   }
 
   @Patch(":id/comments/:commentId/messages/:messageId")
@@ -233,7 +245,7 @@ export class ReviewsController {
     @UuidParam("messageId", MESSAGE_ID) messageId: string,
     @Body() dto: UpdateReviewCommentMessageDto,
   ): Promise<ReviewCommentResponseDto[]> {
-    return this.reviewsService.updateCommentMessage(
+    return this.commentsService.updateCommentMessage(
       user,
       id,
       commentId,
@@ -257,7 +269,7 @@ export class ReviewsController {
     @UuidParam("commentId", COMMENT_ID) commentId: string,
     @UuidParam("messageId", MESSAGE_ID) messageId: string,
   ): Promise<DeletionResponseDto> {
-    return this.reviewsService.deleteCommentMessage(
+    return this.commentsService.deleteCommentMessage(
       user,
       id,
       commentId,
@@ -279,7 +291,7 @@ export class ReviewsController {
     @UuidParam("commentId", COMMENT_ID) commentId: string,
     @Body() dto: UpdateReviewCommentDto,
   ): Promise<ReviewCommentResponseDto[]> {
-    return this.reviewsService.updateComment(user, id, commentId, dto);
+    return this.commentsService.updateComment(user, id, commentId, dto);
   }
 
   @Delete(":id/comments/:commentId")
@@ -295,7 +307,7 @@ export class ReviewsController {
     @UuidParam("id", REVIEW_ID) id: string,
     @UuidParam("commentId", COMMENT_ID) commentId: string,
   ): Promise<DeletionResponseDto> {
-    return this.reviewsService.deleteComment(user, id, commentId);
+    return this.commentsService.deleteComment(user, id, commentId);
   }
 
   @Patch(":id/ack")
@@ -312,7 +324,7 @@ export class ReviewsController {
     @CurrentUser() user: User,
     @UuidParam("id", REVIEW_ID) id: string,
   ): Promise<ReviewResponseDto> {
-    return this.reviewsService.acknowledge(user, id);
+    return this.progressService.acknowledge(user, id);
   }
 
   @Delete(":id/ack")
@@ -327,7 +339,7 @@ export class ReviewsController {
     @CurrentUser() user: User,
     @UuidParam("id", REVIEW_ID) id: string,
   ): Promise<ReviewResponseDto> {
-    return this.reviewsService.unacknowledge(user, id);
+    return this.progressService.unacknowledge(user, id);
   }
 
   @Patch(":id/commits/:commitId/ack")
@@ -343,7 +355,7 @@ export class ReviewsController {
     @UuidParam("id", REVIEW_ID) id: string,
     @UuidParam("commitId", COMMIT_ID) commitId: string,
   ): Promise<ReviewResponseDto> {
-    return this.reviewsService.acknowledgeCommit(user, id, commitId);
+    return this.progressService.acknowledgeCommit(user, id, commitId);
   }
 
   @Delete(":id/commits/:commitId/ack")
@@ -359,7 +371,7 @@ export class ReviewsController {
     @UuidParam("id", REVIEW_ID) id: string,
     @UuidParam("commitId", COMMIT_ID) commitId: string,
   ): Promise<ReviewResponseDto> {
-    return this.reviewsService.unacknowledgeCommit(user, id, commitId);
+    return this.progressService.unacknowledgeCommit(user, id, commitId);
   }
 
   @Put(":id/commits/:commitId/files/viewed")
@@ -378,7 +390,7 @@ export class ReviewsController {
     @UuidParam("commitId", COMMIT_ID) commitId: string,
     @Body() dto: SetFileViewedDto,
   ): Promise<FileViewedResponseDto> {
-    return this.reviewsService.setFileViewed(user, id, commitId, dto);
+    return this.progressService.setFileViewed(user, id, commitId, dto);
   }
 
   @Patch(":id/reviewed")
@@ -395,7 +407,7 @@ export class ReviewsController {
     @CurrentUser() user: User,
     @UuidParam("id", REVIEW_ID) id: string,
   ): Promise<ReviewResponseDto> {
-    return this.reviewsService.markReviewed(user, id);
+    return this.progressService.markReviewed(user, id);
   }
 
   @Patch(":id/commits/:commitId/reviewed")
@@ -411,7 +423,7 @@ export class ReviewsController {
     @UuidParam("id", REVIEW_ID) id: string,
     @UuidParam("commitId", COMMIT_ID) commitId: string,
   ): Promise<ReviewResponseDto> {
-    return this.reviewsService.markCommitReviewed(user, id, commitId);
+    return this.progressService.markCommitReviewed(user, id, commitId);
   }
 
   @Patch(":id/close")
@@ -427,7 +439,7 @@ export class ReviewsController {
     @CurrentUser() user: User,
     @UuidParam("id", REVIEW_ID) id: string,
   ): Promise<ReviewResponseDto> {
-    return this.reviewsService.close(user, id);
+    return this.closingService.close(user, id);
   }
 
   @Post(":id/reviewers")

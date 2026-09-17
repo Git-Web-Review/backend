@@ -17,7 +17,6 @@ import { API_TAG_DESCRIPTIONS } from "./api-tags";
 
 /** Where Swagger UI is mounted. The raw document is served at `<path>-json`. */
 export const SWAGGER_UI_PATH = "api";
-export const SWAGGER_JSON_PATH = `${SWAGGER_UI_PATH}-json`;
 
 export const API_VERSION = "0.1.0";
 

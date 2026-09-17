@@ -6,7 +6,6 @@ import { AuthGuard } from "./auth.guard";
 import { FirebaseAuthService } from "./firebase-auth.service";
 import { FirebaseService } from "./firebase.service";
 import { InternalJwtService } from "./internal-jwt.service";
-import { RolesGuard } from "./roles.guard";
 import { ServiceAccountsController } from "./service-accounts.controller";
 import { ServiceAccountsService } from "./service-accounts.service";
 
@@ -20,7 +19,6 @@ import { ServiceAccountsService } from "./service-accounts.service";
     ServiceAccountsService,
     AuthGuard,
     AdminGuard,
-    RolesGuard,
   ],
   exports: [
     FirebaseService,
@@ -29,7 +27,6 @@ import { ServiceAccountsService } from "./service-accounts.service";
     ServiceAccountsService,
     AuthGuard,
     AdminGuard,
-    RolesGuard,
   ],
 })
 export class AuthModule {}

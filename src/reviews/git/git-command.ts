@@ -1,6 +1,6 @@
 import { HttpStatus } from "@nestjs/common";
-import { AppException } from "../common/app.exception";
-import { ErrorCode } from "../common/error-code.enum";
+import { AppException } from "../../common/app.exception";
+import { ErrorCode } from "../../common/error-code.enum";
 
 /**
  * Guards shared by every `git` invocation.

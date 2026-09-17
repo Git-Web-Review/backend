@@ -1,25 +1,25 @@
 import { HttpStatus, Injectable, Logger } from "@nestjs/common";
-import { Prisma, UserRole, type ServiceAccount, type User } from "@prisma/client";
-import { randomBytes, randomUUID, scrypt, timingSafeEqual } from "crypto";
-import { promisify } from "util";
+import { Prisma, UserRole, type User } from "@prisma/client";
+import { randomUUID } from "crypto";
 import { AppException } from "../common/app.exception";
 import { ErrorCode } from "../common/error-code.enum";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateServiceAccountDto } from "./dto/create-service-account.dto";
 import { UpdateServiceAccountDto } from "./dto/update-service-account.dto";
 import { InternalJwtService } from "./internal-jwt.service";
+import {
+  normalizeEmail,
+  nullIfBlank,
+  requiredText,
+  slugify,
+} from "./service-account-fields";
+import {
+  dummyVerify,
+  generateSecret,
+  hashSecret,
+  verifySecret,
+} from "./service-account-secrets";
 
-const scryptAsync = promisify(scrypt) as (
-  secret: string,
-  salt: Buffer,
-  keylen: number,
-) => Promise<Buffer>;
-
-const SECRET_PREFIX = "gwr_sk_";
-const SECRET_BYTES = 32;
-const SALT_BYTES = 16;
-const KEY_BYTES = 64;
-const HASH_SCHEME = "scrypt";
 const SERVICE_EMAIL_DOMAIN = "service.internal";
 
 export type ServiceAccountWithUser = Prisma.ServiceAccountGetPayload<{
@@ -53,11 +53,11 @@ export class ServiceAccountsService {
   async create(
     dto: CreateServiceAccountDto,
   ): Promise<{ account: ServiceAccountWithUser; clientSecret: string }> {
-    const name = this.requiredText(dto.name, "Service account name is required");
+    const name = requiredText(dto.name, "Service account name is required");
     const clientId = dto.clientId
       ? await this.reserveClientId(dto.clientId)
       : await this.uniqueClientId(name);
-    const email = this.normalizeEmail(dto.email) ?? `${clientId}@${SERVICE_EMAIL_DOMAIN}`;
+    const email = normalizeEmail(dto.email) ?? `${clientId}@${SERVICE_EMAIL_DOMAIN}`;
 
     const existingUser = await this.prisma.user.findUnique({ where: { email } });
     if (existingUser) {
@@ -68,8 +68,8 @@ export class ServiceAccountsService {
       );
     }
 
-    const clientSecret = this.generateSecret();
-    const secretHash = await this.hashSecret(clientSecret);
+    const clientSecret = generateSecret();
+    const secretHash = await hashSecret(clientSecret);
 
     const account = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
@@ -102,7 +102,7 @@ export class ServiceAccountsService {
           clientId,
           secretHash,
           name,
-          description: this.nullIfBlank(dto.description),
+          description: nullIfBlank(dto.description),
           userId: user.id,
         },
         include: serviceAccountInclude,
@@ -122,8 +122,8 @@ export class ServiceAccountsService {
     return this.prisma.serviceAccount.update({
       where: { id: account.id },
       data: {
-        name: dto.name === undefined ? undefined : this.requiredText(dto.name, "Service account name is required"),
-        description: this.nullIfBlank(dto.description),
+        name: dto.name === undefined ? undefined : requiredText(dto.name, "Service account name is required"),
+        description: nullIfBlank(dto.description),
         active: dto.active,
       },
       include: serviceAccountInclude,
@@ -134,8 +134,8 @@ export class ServiceAccountsService {
     id: string,
   ): Promise<{ account: ServiceAccountWithUser; clientSecret: string }> {
     const account = await this.findOrThrow(id);
-    const clientSecret = this.generateSecret();
-    const secretHash = await this.hashSecret(clientSecret);
+    const clientSecret = generateSecret();
+    const secretHash = await hashSecret(clientSecret);
 
     const updated = await this.prisma.serviceAccount.update({
       where: { id: account.id },
@@ -186,8 +186,8 @@ export class ServiceAccountsService {
     });
 
     const secretMatches = account
-      ? await this.verifySecret(clientSecret, account.secretHash)
-      : await this.dummyVerify(clientSecret);
+      ? await verifySecret(clientSecret, account.secretHash)
+      : await dummyVerify(clientSecret);
 
     if (!account || !secretMatches || !account.active) {
       this.logger.warn(`Failed internal token request for client ${clientId}`);
@@ -302,7 +302,7 @@ export class ServiceAccountsService {
 
   /** Derives a client id from the name, suffixing it until one is free. */
   private async uniqueClientId(source: string): Promise<string> {
-    const base = this.slugify(source) || "agent";
+    const base = slugify(source) || "agent";
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const candidate =
@@ -327,77 +327,5 @@ export class ServiceAccountsService {
     });
 
     return !!existing;
-  }
-
-  private slugify(value: string): string {
-    return value
-      .normalize("NFKD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 48);
-  }
-
-  private generateSecret(): string {
-    return `${SECRET_PREFIX}${randomBytes(SECRET_BYTES).toString("base64url")}`;
-  }
-
-  private async hashSecret(secret: string): Promise<string> {
-    const salt = randomBytes(SALT_BYTES);
-    const derived = await scryptAsync(secret, salt, KEY_BYTES);
-    return `${HASH_SCHEME}$${salt.toString("base64")}$${derived.toString("base64")}`;
-  }
-
-  private async verifySecret(secret: string, stored: string): Promise<boolean> {
-    const [scheme, saltBase64, hashBase64] = stored.split("$");
-    if (scheme !== HASH_SCHEME || !saltBase64 || !hashBase64) {
-      return false;
-    }
-
-    const expected = Buffer.from(hashBase64, "base64");
-    const derived = await scryptAsync(
-      secret,
-      Buffer.from(saltBase64, "base64"),
-      expected.length,
-    );
-
-    return expected.length === derived.length && timingSafeEqual(expected, derived);
-  }
-
-  /**
-   * Burns the same scrypt work on unknown client ids so response time does not
-   * reveal whether a client id exists.
-   */
-  private async dummyVerify(secret: string): Promise<boolean> {
-    await scryptAsync(secret, randomBytes(SALT_BYTES), KEY_BYTES);
-    return false;
-  }
-
-  private normalizeEmail(email?: string | null): string | null {
-    const normalized = email?.trim().toLowerCase();
-    return normalized || null;
-  }
-
-  private nullIfBlank(value?: string | null): string | null | undefined {
-    if (value === undefined) {
-      return undefined;
-    }
-
-    const trimmed = value?.trim();
-    return trimmed ? trimmed : null;
-  }
-
-  private requiredText(value: string | undefined, message: string): string {
-    const trimmed = value?.trim();
-    if (!trimmed) {
-      throw new AppException(
-        ErrorCode.UNKNOWN_ERROR,
-        HttpStatus.BAD_REQUEST,
-        message,
-      );
-    }
-
-    return trimmed;
   }
 }

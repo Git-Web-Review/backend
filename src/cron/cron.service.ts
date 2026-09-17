@@ -5,7 +5,7 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { ReviewsService } from "../reviews/reviews.service";
+import { ReviewClosingService } from "../reviews/review-closing.service";
 import { SettingsService } from "../settings/settings.service";
 
 const TICK_INTERVAL_MS = 60_000;
@@ -22,7 +22,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly settings: SettingsService,
-    private readonly reviews: ReviewsService,
+    private readonly reviewClosing: ReviewClosingService,
   ) {}
 
   onModuleInit(): void {
@@ -65,7 +65,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         this.isDue("reviewAutoClose", settings.reviewAutoCloseIntervalMinutes)
       ) {
         await this.runTask("reviewAutoClose", () =>
-          this.reviews.closeAckedReviewsMergedOnMaster(),
+          this.reviewClosing.closeAckedReviewsMergedOnMaster(),
         );
       }
     } catch (error) {
