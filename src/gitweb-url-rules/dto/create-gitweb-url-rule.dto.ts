@@ -43,6 +43,18 @@ export class CreateGitwebUrlRuleDto {
   remoteTemplate?: string | null;
 
   @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      "Template of the gitweb project page, used for file and line links when the review URL is not a gitweb page (e.g. a git:// remote). Same variables as remoteTemplate. Must render an http(s) URL.",
+    example: "http://${HOSTNAME}/git/?p=${USERNAME}/${PROJECT}.git",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  webTemplate?: string | null;
+
+  @ApiPropertyOptional({
     enum: GitwebUrlRuleKind, enumName: "GitwebUrlRuleKind",
     default: GitwebUrlRuleKind.AUTO,
     description:

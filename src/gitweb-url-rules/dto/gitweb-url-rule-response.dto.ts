@@ -18,6 +18,13 @@ export class GitwebUrlRuleResponseDto implements GitwebUrlRule {
   })
   remoteTemplate!: string | null;
 
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: "http://${HOSTNAME}/git/?p=${USERNAME}/${PROJECT}.git",
+  })
+  webTemplate!: string | null;
+
   @ApiProperty({ enum: GitwebUrlRuleKind, enumName: "GitwebUrlRuleKind" })
   linkKind!: GitwebUrlRuleKind;
 

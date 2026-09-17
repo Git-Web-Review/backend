@@ -13,6 +13,7 @@ import {
   ReviewFieldType,
   ReviewStatus,
   UserRole,
+  type GitwebUrlRule,
   type User,
 } from "@prisma/client";
 import { AppException } from "../common/app.exception";
@@ -241,7 +242,7 @@ export class ReviewsService {
     page: number,
     limit: number,
   ) {
-    const [items, total] = await Promise.all([
+    const [items, total, gitwebUrlRules] = await Promise.all([
       this.prisma.review.findMany({
         where,
         include: reviewInclude,
@@ -250,10 +251,13 @@ export class ReviewsService {
         take: limit,
       }),
       this.prisma.review.count({ where }),
+      this.gitwebUrlRules.list(false),
     ]);
 
     return {
-      items: items.map((review) => this.toResponse(review)),
+      items: await Promise.all(
+        items.map((review) => this.toResponse(review, gitwebUrlRules)),
+      ),
       page,
       limit,
       total,
@@ -2584,11 +2588,18 @@ export class ReviewsService {
     );
   }
 
-  private toResponse(review: ReviewWithRelations): ReviewResponseDto {
+  private async toResponse(
+    review: ReviewWithRelations,
+    gitwebUrlRules?: GitwebUrlRule[],
+  ): Promise<ReviewResponseDto> {
     const { gitwebRawHtml: _gitwebRawHtml, ...reviewWithoutRawHtml } = review;
 
     return {
       ...reviewWithoutRawHtml,
+      gitwebProjectUrl: await this.gitwebUrlRules.gitwebProjectUrl(
+        review.gitwebUrl,
+        gitwebUrlRules,
+      ),
       gitwebRawHtml: null,
       gitDiff: this.gitDiffFromSnapshot(review.gitwebSnapshot),
       owner: this.toUserSummary(review.owner),

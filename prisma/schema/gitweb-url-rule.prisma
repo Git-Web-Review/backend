@@ -3,6 +3,7 @@ model GitwebUrlRule {
     label          String?
     regex          String
     remoteTemplate String?           @map("remote_template")
+    webTemplate    String?           @map("web_template")
     linkKind       GitwebUrlRuleKind @default(AUTO) @map("link_kind")
     priority       Int               @default(100)
     enabled        Boolean           @default(true)

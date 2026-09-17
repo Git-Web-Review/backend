@@ -13,6 +13,14 @@ export class ReviewResponseDto implements Review {
   @ApiProperty()
   gitwebUrl!: string;
 
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "Gitweb project page rendered from the matching URL rule's web template, for reviews whose URL is not a gitweb page (e.g. a git:// remote).",
+  })
+  gitwebProjectUrl!: string | null;
+
   @ApiProperty({ type: String, nullable: true })
   title!: string | null;
 

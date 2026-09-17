@@ -133,6 +133,7 @@ export class GitwebUrlRulesService implements OnModuleInit {
         label: this.nullIfBlank(dto.label),
         regex,
         remoteTemplate: this.nullIfBlank(dto.remoteTemplate),
+        webTemplate: this.nullIfBlank(dto.webTemplate),
         linkKind: dto.linkKind ?? GitwebUrlRuleKind.AUTO,
         priority: dto.priority ?? 100,
         enabled: dto.enabled ?? true,
@@ -157,6 +158,9 @@ export class GitwebUrlRulesService implements OnModuleInit {
     if (dto.remoteTemplate !== undefined) {
       data.remoteTemplate = this.nullIfBlank(dto.remoteTemplate);
     }
+    if (dto.webTemplate !== undefined) {
+      data.webTemplate = this.nullIfBlank(dto.webTemplate);
+    }
     if (dto.linkKind !== undefined) {
       data.linkKind = dto.linkKind;
     }
@@ -179,8 +183,76 @@ export class GitwebUrlRulesService implements OnModuleInit {
   }
 
   async parseGitwebUrl(rawUrl: string): Promise<GitwebUrlParseResult> {
-    const rules = await this.list(false);
+    const matched = this.matchRule(rawUrl, await this.list(false));
+    if (!matched) {
+      throw new AppException(
+        ErrorCode.INVALID_GITWEB_URL,
+        HttpStatus.BAD_REQUEST,
+        "Unrecognized URL: no git-web URL rule matched",
+      );
+    }
 
+    const { rule, variables } = matched;
+    const linkKind: GitwebLinkKind =
+      rule.linkKind === GitwebUrlRuleKind.AUTO
+        ? variables.COMMIT_HASH
+          ? "COMMIT"
+          : "SUMMARY"
+        : rule.linkKind === GitwebUrlRuleKind.COMMIT
+          ? "COMMIT"
+          : "SUMMARY";
+    const remoteTemplate = this.nullIfBlank(rule.remoteTemplate);
+    const remoteUrl = remoteTemplate
+      ? this.renderTemplate(remoteTemplate, variables)
+      : variables.HOSTNAME && variables.PROJECT
+        ? `git://${[variables.HOSTNAME, variables.USERNAME, variables.PROJECT].filter(Boolean).join("/")}`
+        : null;
+
+    return {
+      linkKind,
+      remoteUrl,
+      hostname: variables.HOSTNAME || null,
+      project: variables.PROJECT || null,
+      branch: variables.BRANCH || null,
+      head: variables.HEAD || null,
+      commitHash: variables.COMMIT_HASH || null,
+      ruleId: rule.id,
+      ruleLabel: rule.label,
+    };
+  }
+
+  /**
+   * The gitweb project page of a review URL, rendered from the web template
+   * of the rule it matches. File and line links are built on it when the
+   * review URL is not a gitweb page itself, e.g. a git:// remote.
+   *
+   * `rules` lets a caller resolving many URLs load the rules once.
+   */
+  async gitwebProjectUrl(
+    rawUrl: string,
+    rules?: GitwebUrlRule[],
+  ): Promise<string | null> {
+    const matched = this.matchRule(rawUrl, rules ?? (await this.list(false)));
+    const webTemplate = this.nullIfBlank(matched?.rule.webTemplate);
+    if (!matched || !webTemplate) {
+      return null;
+    }
+
+    // The URL ends up in an href, and the variables come from what the user
+    // submitted: only a web page is handed out.
+    const projectUrl = this.renderTemplate(webTemplate, matched.variables);
+    try {
+      const { protocol } = new URL(projectUrl);
+      return protocol === "http:" || protocol === "https:" ? projectUrl : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private matchRule(
+    rawUrl: string,
+    rules: GitwebUrlRule[],
+  ): { rule: GitwebUrlRule; variables: Record<string, string> } | null {
     for (const rule of rules) {
       let regex: RegExp;
       try {
@@ -190,44 +262,12 @@ export class GitwebUrlRulesService implements OnModuleInit {
       }
 
       const match = regex.exec(rawUrl);
-      if (!match?.groups) {
-        continue;
+      if (match?.groups) {
+        return { rule, variables: this.templateVariables(match.groups) };
       }
-
-      const variables = this.templateVariables(match.groups);
-      const linkKind: GitwebLinkKind =
-        rule.linkKind === GitwebUrlRuleKind.AUTO
-          ? variables.COMMIT_HASH
-            ? "COMMIT"
-            : "SUMMARY"
-          : rule.linkKind === GitwebUrlRuleKind.COMMIT
-            ? "COMMIT"
-            : "SUMMARY";
-      const remoteTemplate = this.nullIfBlank(rule.remoteTemplate);
-      const remoteUrl = remoteTemplate
-        ? this.renderTemplate(remoteTemplate, variables)
-        : variables.HOSTNAME && variables.PROJECT
-          ? `git://${[variables.HOSTNAME, variables.USERNAME, variables.PROJECT].filter(Boolean).join("/")}`
-          : null;
-
-      return {
-        linkKind,
-        remoteUrl,
-        hostname: variables.HOSTNAME || null,
-        project: variables.PROJECT || null,
-        branch: variables.BRANCH || null,
-        head: variables.HEAD || null,
-        commitHash: variables.COMMIT_HASH || null,
-        ruleId: rule.id,
-        ruleLabel: rule.label,
-      };
     }
 
-    throw new AppException(
-      ErrorCode.INVALID_GITWEB_URL,
-      HttpStatus.BAD_REQUEST,
-      "Unrecognized URL: no git-web URL rule matched",
-    );
+    return null;
   }
 
   private templateVariables(
