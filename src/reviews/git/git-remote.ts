@@ -97,7 +97,7 @@ export async function fetchGitBranchCommitOptions(
     "-C",
     repoPath,
     "log",
-    "--max-count=20",
+    "--max-count=50",
     "--format=%H%x00%an%x00%ae%x00%aI%x00%s%x00%b%x1e",
     upstreamRef ? `${upstreamRef}..refs/gwr/head` : "refs/gwr/head",
   ]);
