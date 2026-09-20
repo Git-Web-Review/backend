@@ -38,6 +38,7 @@ enum ReviewCommitChangeKind {
     UNCHANGED
     REBASED
     MODIFIED
+    LOG_MODIFIED
 }
 
 enum ReviewCommentSide {

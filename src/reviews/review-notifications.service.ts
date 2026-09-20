@@ -66,6 +66,7 @@ export class ReviewNotificationsService {
       commitCount: plan.entries.length,
       newCount: countByKind(ReviewCommitChangeKind.NEW),
       modifiedCount: countByKind(ReviewCommitChangeKind.MODIFIED),
+      logModifiedCount: countByKind(ReviewCommitChangeKind.LOG_MODIFIED),
       rebasedCount: countByKind(ReviewCommitChangeKind.REBASED),
       droppedCount: plan.dropped.length,
       ...actor,

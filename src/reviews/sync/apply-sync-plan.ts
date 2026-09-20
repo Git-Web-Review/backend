@@ -9,6 +9,7 @@ import { truncate } from "../review-text";
 import {
   allCommitsStayAcked,
   modifiedEntries,
+  needsNewReview,
   syncedReviewText,
   type SyncPlan,
   type SyncPlanEntry,
@@ -39,7 +40,7 @@ export async function applySyncPlan(
   await writePlanEntries(tx, reviewId, plan.entries);
   await restoreRehashedComments(tx, reviewId, rehashedEntries);
   await applyCommentRemaps(tx, commentRemaps, actorId);
-  await resetModifiedCommits(tx, plan);
+  await resetChangedCommits(tx, plan);
 
   if (!allCommitsStayAcked(plan)) {
     await tx.reviewReviewer.updateMany({
@@ -135,7 +136,7 @@ async function writePlanEntries(
         ...contentUpdate,
         hash: entry.hash,
         changeKind: entry.changeKind,
-        ...(entry.changeKind === ReviewCommitChangeKind.MODIFIED
+        ...(needsNewReview(entry)
           ? { status: ReviewCommitStatus.PENDING }
           : {}),
       },
@@ -177,27 +178,34 @@ async function applyCommentRemaps(
   }
 }
 
-/** A modified commit loses its acks and the files marked as viewed. */
-async function resetModifiedCommits(
+/**
+ * A commit up for review again loses its acks. The files marked as viewed
+ * only go with a changed diff: a rewritten log leaves them all as they were.
+ */
+async function resetChangedCommits(
   tx: Prisma.TransactionClient,
   plan: SyncPlan,
 ): Promise<void> {
-  const modified = modifiedEntries(plan);
+  const changed = plan.entries.filter(
+    (entry) => entry.previous && needsNewReview(entry),
+  );
 
-  const modifiedWithAcks = modified.filter(
+  const changedWithAcks = changed.filter(
     (entry) => entry.previous!.acks.length > 0,
   );
-  if (modifiedWithAcks.length) {
+  if (changedWithAcks.length) {
     await tx.reviewCommitAck.deleteMany({
       where: {
         reviewCommitId: {
-          in: modifiedWithAcks.map((entry) => entry.previous!.id),
+          in: changedWithAcks.map((entry) => entry.previous!.id),
         },
       },
     });
   }
 
-  const modifiedCommitIds = modified.map((entry) => entry.previous!.id);
+  const modifiedCommitIds = modifiedEntries(plan).map(
+    (entry) => entry.previous!.id,
+  );
   if (modifiedCommitIds.length) {
     await tx.reviewFileView.deleteMany({
       where: { reviewCommitId: { in: modifiedCommitIds } },

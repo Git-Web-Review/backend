@@ -64,9 +64,16 @@ export function commitCreateFromGitMetadata(
     signedOffByEmail: signedOffBy.email || metadata.authorEmail,
     fixesHash: firstMatch(metadata.message, /Fixes:\s*([0-9a-f]{7,40})/i),
     fixesTitle: null,
-    rawMessage: truncate(metadata.message, 20000) ?? metadata.title,
+    rawMessage: rawMessageFromGitMetadata(metadata),
     gitDiff: metadata.gitDiff as unknown as Prisma.InputJsonObject,
   };
+}
+
+/** The commit message as it is stored, long ones cut to the column size. */
+export function rawMessageFromGitMetadata(
+  metadata: GitCommitMetadata,
+): string {
+  return truncate(metadata.message, 20000) ?? metadata.title;
 }
 
 export function commitFromMetadata(

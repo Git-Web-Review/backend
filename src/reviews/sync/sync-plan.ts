@@ -3,6 +3,7 @@ import {
   ReviewCommitStatus,
 } from "@prisma/client";
 import type { GitCommitMetadata } from "../git/git-remote";
+import { rawMessageFromGitMetadata } from "../gitweb/gitweb-metadata";
 import type { ReviewCommitWithAcks } from "../review-queries";
 import { reviewTitleFromCommits, truncate } from "../review-text";
 
@@ -29,8 +30,9 @@ export type SyncPlan = {
 export type RemainingCommits = Map<string, ReviewCommitWithAcks>;
 
 /**
- * Identical patch-id means the commit content is unchanged (pure rebase), so
- * statuses and acks are preserved.
+ * Identical patch-id means the diff is unchanged. Only a commit whose message
+ * did not move either is a pure rebase, keeping its status and its acks; a
+ * rewritten commit log is a change the reviewers have to look at again.
  */
 export function matchRebasedCommits(
   unmatched: SyncPlanEntry[],
@@ -47,9 +49,22 @@ export function matchRebasedCommits(
     if (match) {
       remainingOld.delete(match.id);
       entry.previous = match;
-      entry.changeKind = ReviewCommitChangeKind.REBASED;
+      entry.changeKind = logChanged(entry, match)
+        ? ReviewCommitChangeKind.LOG_MODIFIED
+        : ReviewCommitChangeKind.REBASED;
     }
   }
+}
+
+/** Compared as stored, so a truncated message does not read as a change. */
+function logChanged(
+  entry: SyncPlanEntry,
+  previous: ReviewCommitWithAcks,
+): boolean {
+  return (
+    !!entry.metadata &&
+    rawMessageFromGitMetadata(entry.metadata) !== previous.rawMessage
+  );
 }
 
 /** Same title on both sides (unique) means the commit was amended in place. */
@@ -149,5 +164,13 @@ export function modifiedEntries(plan: SyncPlan): SyncPlanEntry[] {
   return plan.entries.filter(
     (entry) =>
       entry.changeKind === ReviewCommitChangeKind.MODIFIED && entry.previous,
+  );
+}
+
+/** A commit whose diff or whose log moved is up for review again. */
+export function needsNewReview(entry: SyncPlanEntry): boolean {
+  return (
+    entry.changeKind === ReviewCommitChangeKind.MODIFIED ||
+    entry.changeKind === ReviewCommitChangeKind.LOG_MODIFIED
   );
 }
