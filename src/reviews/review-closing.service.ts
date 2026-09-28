@@ -118,15 +118,53 @@ export class ReviewClosingService {
       "+refs/remotes/origin/master:refs/gwr/master",
     ]);
 
+    const masterTitles = await this.masterCommitTitles(repoPath);
+
     for (const commit of review.commits) {
-      await runGit([
-        "-C",
-        repoPath,
-        "fetch",
-        "--depth=2",
-        metadata.remoteUrl,
-        commit.hash,
-      ]);
+      // A commit whose title is found on master is considered merged, even
+      // when it was reworded or amended enough to change its hash and patch.
+      if (masterTitles.has(normalizeTitle(commit.title))) {
+        continue;
+      }
+
+      if (
+        !(await this.commitPatchOnMaster(
+          repoPath,
+          metadata.remoteUrl,
+          commit.hash,
+        ))
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private async masterCommitTitles(repoPath: string): Promise<Set<string>> {
+    const log = await runGit([
+      "-C",
+      repoPath,
+      "log",
+      "--format=%s",
+      "refs/gwr/master",
+    ]);
+
+    return new Set(
+      log
+        .split("\n")
+        .map(normalizeTitle)
+        .filter((title) => title),
+    );
+  }
+
+  private async commitPatchOnMaster(
+    repoPath: string,
+    remoteUrl: string,
+    hash: string,
+  ): Promise<boolean> {
+    try {
+      await runGit(["-C", repoPath, "fetch", "--depth=2", remoteUrl, hash]);
 
       // "git cherry" marks the commit with "-" when a patch-equivalent
       // commit exists upstream, which also covers rebased commits.
@@ -135,15 +173,18 @@ export class ReviewClosingService {
         repoPath,
         "cherry",
         "refs/gwr/master",
-        commit.hash,
-        `${commit.hash}~1`,
+        hash,
+        `${hash}~1`,
       ]);
       const lines = cherry.split("\n").filter((line) => line.trim());
-      if (lines.some((line) => line.startsWith("+"))) {
-        return false;
-      }
+      return !lines.some((line) => line.startsWith("+"));
+    } catch {
+      // The commit may no longer exist upstream (e.g. amended before merge).
+      return false;
     }
-
-    return true;
   }
+}
+
+function normalizeTitle(title: string): string {
+  return title.trim().replace(/\s+/g, " ");
 }
