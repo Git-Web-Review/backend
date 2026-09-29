@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { AppException } from "../common/app.exception";
 import { ErrorCode } from "../common/error-code.enum";
 import { PrismaService } from "../prisma/prisma.service";
+import { projectOwnerIdsFor } from "../project-owners/project-owners.service";
 import { mentionedUserIds } from "./mentions";
 
 export const userSummarySelect = {
@@ -59,6 +60,11 @@ export type ReviewWithRelations = Prisma.ReviewGetPayload<{
   include: typeof reviewInclude;
 }>;
 
+/** A review with the users owning its project, who manage it as its owner. */
+export type ReviewWithAccess = ReviewWithRelations & {
+  projectOwnerIds: string[];
+};
+
 export type ReviewCommentWithMessages = Prisma.ReviewCommentGetPayload<{
   include: typeof reviewCommentInclude;
 }>;
@@ -76,7 +82,7 @@ export type CommentLocation = {
 export async function findReviewOrThrow(
   prisma: PrismaService,
   reviewId: string,
-): Promise<ReviewWithRelations> {
+): Promise<ReviewWithAccess> {
   const review = await prisma.review.findUnique({
     where: { id: reviewId },
     include: reviewInclude,
@@ -90,7 +96,10 @@ export async function findReviewOrThrow(
     );
   }
 
-  return review;
+  return {
+    ...review,
+    projectOwnerIds: await projectOwnerIdsFor(prisma, review.sourceProject),
+  };
 }
 
 /** Every user the messages mention, in one query. */

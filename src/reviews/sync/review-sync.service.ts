@@ -7,7 +7,7 @@ import { ReviewResponseDto } from "../dto/review-response.dto";
 import { ReviewSyncPreviewResponseDto } from "../dto/review-sync-preview-response.dto";
 import { SyncReviewDto } from "../dto/sync-review.dto";
 import { gitDiffFromJson, remapCommentTarget } from "../git/git-diff";
-import { assertIsOwner, assertNotClosed } from "../review-access";
+import { assertCanManage, assertNotClosed } from "../review-access";
 import { ReviewNotificationsService } from "../review-notifications.service";
 import { findReviewOrThrow, type ReviewWithRelations } from "../review-queries";
 import { ReviewResponsesService } from "../review-responses.service";
@@ -95,7 +95,7 @@ export class ReviewSyncService {
     reviewId: string,
   ): Promise<ReviewWithRelations> {
     const review = await findReviewOrThrow(this.prisma, reviewId);
-    assertIsOwner(user, review);
+    assertCanManage(user, review);
     assertNotClosed(review);
     return review;
   }

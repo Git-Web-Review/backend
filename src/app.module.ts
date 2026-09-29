@@ -10,6 +10,7 @@ import { HealthModule } from "./health/health.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { ProjectDefaultReviewersModule } from "./project-default-reviewers/project-default-reviewers.module";
+import { ProjectOwnersModule } from "./project-owners/project-owners.module";
 import { ThrottlingModule } from "./common/throttling/throttling.module";
 import { RedisModule } from "./redis/redis.module";
 import { ReviewFieldsModule } from "./review-fields/review-fields.module";
@@ -67,6 +68,7 @@ import { UsersModule } from "./users/users.module";
     UsersModule,
     ReviewFieldsModule,
     ProjectDefaultReviewersModule,
+    ProjectOwnersModule,
     ReviewsModule,
     SettingsModule,
     CronModule,

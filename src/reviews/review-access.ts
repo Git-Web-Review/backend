@@ -2,12 +2,17 @@ import { HttpStatus } from "@nestjs/common";
 import { ReviewStatus, UserRole, type User } from "@prisma/client";
 import { AppException } from "../common/app.exception";
 import { ErrorCode } from "../common/error-code.enum";
-import type { ReviewWithRelations } from "./review-queries";
+import type { ReviewWithAccess, ReviewWithRelations } from "./review-queries";
 
-export function assertCanRead(user: User, review: ReviewWithRelations): void {
+/** The review owner, or an owner of the review's project. */
+export function canManage(user: User, review: ReviewWithAccess): boolean {
+  return review.ownerId === user.id || review.projectOwnerIds.includes(user.id);
+}
+
+export function assertCanRead(user: User, review: ReviewWithAccess): void {
   if (
     user.role === UserRole.ADMIN ||
-    review.ownerId === user.id ||
+    canManage(user, review) ||
     review.reviewers.some((reviewer) => reviewer.userId === user.id)
   ) {
     return;
@@ -20,15 +25,15 @@ export function assertCanRead(user: User, review: ReviewWithRelations): void {
   );
 }
 
-export function assertIsOwner(user: User, review: ReviewWithRelations): void {
-  if (review.ownerId === user.id) {
+export function assertCanManage(user: User, review: ReviewWithAccess): void {
+  if (canManage(user, review)) {
     return;
   }
 
   throw new AppException(
     ErrorCode.ROLE_FORBIDDEN,
     HttpStatus.FORBIDDEN,
-    "Only the review owner can update review details",
+    "Only the review owner or a project owner can update review details",
   );
 }
 
@@ -49,7 +54,7 @@ export function assertIsReviewer(
 
 export function assertCanResolveComment(
   user: User,
-  review: ReviewWithRelations,
+  review: ReviewWithAccess,
 ): void {
   assertIsOwnerOrReviewer(
     user,
@@ -60,11 +65,11 @@ export function assertCanResolveComment(
 
 export function assertIsOwnerOrReviewer(
   user: User,
-  review: ReviewWithRelations,
+  review: ReviewWithAccess,
   message: string,
 ): void {
   if (
-    review.ownerId === user.id ||
+    canManage(user, review) ||
     review.reviewers.some((reviewer) => reviewer.userId === user.id)
   ) {
     return;

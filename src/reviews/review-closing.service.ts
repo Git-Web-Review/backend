@@ -7,7 +7,7 @@ import { ReviewResponseDto } from "./dto/review-response.dto";
 import { runGit, ensureGitCache } from "./git/git-runner";
 import type { GitwebMetadata } from "./gitweb/gitweb-metadata";
 import { GitwebMetadataService } from "./gitweb/gitweb-metadata.service";
-import { assertIsOwner } from "./review-access";
+import { assertCanManage } from "./review-access";
 import { ReviewNotificationsService } from "./review-notifications.service";
 import {
   findReviewOrThrow,
@@ -28,7 +28,7 @@ export class ReviewClosingService {
 
   async close(user: User, reviewId: string): Promise<ReviewResponseDto> {
     const review = await findReviewOrThrow(this.prisma, reviewId);
-    assertIsOwner(user, review);
+    assertCanManage(user, review);
 
     if (review.status === ReviewStatus.CLOSED) {
       return this.responses.toResponse(review);

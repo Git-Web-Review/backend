@@ -1,0 +1,14 @@
+/// A user who owns a project: they see every review of it and manage those
+/// reviews as their owner would. `project` is the bare repository name, the
+/// same value `ProjectDefaultReviewer` uses.
+model ProjectOwner {
+    id        String   @id @default(uuid())
+    project   String
+    userId    String   @map("user_id")
+    user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+    createdAt DateTime @default(now()) @map("created_at")
+
+    @@unique([project, userId])
+    @@index([userId])
+    @@map("project_owners")
+}

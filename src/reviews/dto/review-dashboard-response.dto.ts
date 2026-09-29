@@ -25,6 +25,12 @@ export class ReviewDashboardResponseDto {
   @ApiProperty({ type: () => ReviewDashboardPageResponseDto })
   assigned!: ReviewDashboardPageResponseDto;
 
+  @ApiProperty({
+    type: () => ReviewDashboardPageResponseDto,
+    description: "Open reviews of the projects the caller owns.",
+  })
+  project!: ReviewDashboardPageResponseDto;
+
   @ApiProperty({ type: () => ReviewDashboardPageResponseDto })
   done!: ReviewDashboardPageResponseDto;
 }

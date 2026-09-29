@@ -6,7 +6,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { CreateReviewDto } from "./dto/create-review.dto";
 import { ReviewResponseDto } from "./dto/review-response.dto";
 import { SetReviewFieldValueDto } from "./dto/set-review-field-value.dto";
-import { assertIsOwner } from "./review-access";
+import { assertCanManage } from "./review-access";
 import { findReviewOrThrow } from "./review-queries";
 import { ReviewResponsesService } from "./review-responses.service";
 
@@ -25,7 +25,7 @@ export class ReviewFieldValuesService {
     dto: SetReviewFieldValueDto,
   ): Promise<ReviewResponseDto> {
     const review = await findReviewOrThrow(this.prisma, reviewId);
-    assertIsOwner(user, review);
+    assertCanManage(user, review);
 
     const field = await this.prisma.reviewFieldDefinition.findUnique({
       where: { id: fieldId },

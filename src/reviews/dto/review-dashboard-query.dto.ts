@@ -3,7 +3,7 @@ import { Type } from "class-transformer";
 import { IsInt, IsOptional, Max, Min } from "class-validator";
 
 /**
- * The dashboard returns three independently paginated lists in one response,
+ * The dashboard returns four independently paginated lists in one response,
  * so each one carries its own page cursor while they share a page size.
  */
 export class ReviewDashboardQueryDto {
@@ -33,6 +33,19 @@ export class ReviewDashboardQueryDto {
   assignedPage = 1;
 
   @ApiPropertyOptional({
+    description:
+      "Page of the open reviews of the projects the caller owns, 1-based.",
+    minimum: 1,
+    default: 1,
+    example: 1,
+  })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  projectPage = 1;
+
+  @ApiPropertyOptional({
     description: "Page of the reviews already closed, 1-based.",
     minimum: 1,
     default: 1,
@@ -45,7 +58,7 @@ export class ReviewDashboardQueryDto {
   donePage = 1;
 
   @ApiPropertyOptional({
-    description: "Number of reviews per page, applied to all three lists.",
+    description: "Number of reviews per page, applied to all four lists.",
     minimum: 1,
     maximum: 50,
     default: 10,

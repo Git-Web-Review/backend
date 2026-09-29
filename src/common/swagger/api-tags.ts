@@ -10,6 +10,7 @@ export const ApiTag = {
   Reviews: "reviews",
   ReviewFields: "review-fields",
   ProjectDefaultReviewers: "project-default-reviewers",
+  ProjectOwners: "project-owners",
   Notifications: "notifications",
   GitwebUrlRules: "gitweb-url-rules",
   CommitLogLinkRules: "commit-log-link-rules",
@@ -36,6 +37,8 @@ export const API_TAG_DESCRIPTIONS: Record<ApiTagName, string> = {
     "Admin-defined custom fields (ticket link, release, ...) that every review can carry.",
   [ApiTag.ProjectDefaultReviewers]:
     "Admin-defined reviewers added to every new review of a project.",
+  [ApiTag.ProjectOwners]:
+    "Admin-defined project owners, who see and manage every review of their projects.",
   [ApiTag.Notifications]:
     "The caller's notification inbox and its seen state.",
   [ApiTag.GitwebUrlRules]:

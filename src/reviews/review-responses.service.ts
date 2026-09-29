@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import type { GitwebUrlRule } from "@prisma/client";
 import { GitwebUrlRulesService } from "../gitweb-url-rules/gitweb-url-rules.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { projectOwnerIdsFor } from "../project-owners/project-owners.service";
 import { ReviewCommentResponseDto } from "./dto/review-comment-response.dto";
 import { ReviewResponseDto } from "./dto/review-response.dto";
 import { gitDiffFromJson, gitDiffFromSnapshot } from "./git/git-diff";
@@ -10,6 +11,7 @@ import {
   mentionedUsersById,
   toUserSummary,
   type ReviewCommentWithMessages,
+  type ReviewWithAccess,
   type ReviewWithRelations,
 } from "./review-queries";
 
@@ -22,13 +24,17 @@ export class ReviewResponsesService {
   ) {}
 
   async toResponse(
-    review: ReviewWithRelations,
+    review: ReviewWithRelations | ReviewWithAccess,
     gitwebUrlRules?: GitwebUrlRule[],
   ): Promise<ReviewResponseDto> {
     const { gitwebRawHtml: _gitwebRawHtml, ...reviewWithoutRawHtml } = review;
 
     return {
       ...reviewWithoutRawHtml,
+      projectOwnerIds:
+        "projectOwnerIds" in review
+          ? review.projectOwnerIds
+          : await projectOwnerIdsFor(this.prisma, review.sourceProject),
       gitwebProjectUrl: await this.gitwebUrlRules.gitwebProjectUrl(
         review.gitwebUrl,
         gitwebUrlRules,

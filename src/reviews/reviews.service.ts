@@ -4,6 +4,8 @@ import { DeletionResponseDto } from "../common/dto/deletion-response.dto";
 import { GitwebUrlRulesService } from "../gitweb-url-rules/gitweb-url-rules.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ProjectDefaultReviewersService } from "../project-default-reviewers/project-default-reviewers.service";
+import { sourceProjectWhere } from "../project-default-reviewers/project-name";
+import { projectsOwnedBy } from "../project-owners/project-owners.service";
 import { AddReviewReviewersDto } from "./dto/add-review-reviewers.dto";
 import { CreateReviewDto } from "./dto/create-review.dto";
 import { PreviewReviewDto } from "./dto/preview-review.dto";
@@ -15,8 +17,8 @@ import { UpdateReviewDto } from "./dto/update-review.dto";
 import type { GitwebMetadata } from "./gitweb/gitweb-metadata";
 import { GitwebMetadataService } from "./gitweb/gitweb-metadata.service";
 import {
+  assertCanManage,
   assertCanRead,
-  assertIsOwner,
   assertIsOwnerOrReviewer,
 } from "./review-access";
 import { ReviewFieldValuesService } from "./review-field-values.service";
@@ -57,20 +59,34 @@ export class ReviewsService {
       status: { not: ReviewStatus.CLOSED },
       reviewers: { some: { userId: user.id } },
     } satisfies Prisma.ReviewWhereInput;
+    // Without an owned project, an empty OR matches no review.
+    const ownedProjectsWhere = sourceProjectWhere(
+      await projectsOwnedBy(this.prisma, user.id),
+    );
+    const projectWhere = {
+      status: { not: ReviewStatus.CLOSED },
+      ...ownedProjectsWhere,
+    } satisfies Prisma.ReviewWhereInput;
     const doneWhere = {
       status: ReviewStatus.CLOSED,
-      OR: [{ ownerId: user.id }, { reviewers: { some: { userId: user.id } } }],
+      OR: [
+        { ownerId: user.id },
+        { reviewers: { some: { userId: user.id } } },
+        ownedProjectsWhere,
+      ],
     } satisfies Prisma.ReviewWhereInput;
 
-    const [owned, assigned, done] = await Promise.all([
+    const [owned, assigned, project, done] = await Promise.all([
       this.dashboardPage(ownedWhere, query.ownedPage, query.limit),
       this.dashboardPage(assignedWhere, query.assignedPage, query.limit),
+      this.dashboardPage(projectWhere, query.projectPage, query.limit),
       this.dashboardPage(doneWhere, query.donePage, query.limit),
     ]);
 
     return {
       owned,
       assigned,
+      project,
       done,
     };
   }
@@ -230,11 +246,14 @@ export class ReviewsService {
   ): Promise<ReviewResponseDto> {
     const existingReview = await findReviewOrThrow(this.prisma, reviewId);
     if (hasOwnerOnlyUpdate(dto)) {
-      assertIsOwner(user, existingReview);
+      assertCanManage(user, existingReview);
     }
 
     const reviewerUserIds = dto.reviewerUserIds
-      ? await this.reviewers.validReviewerUserIds(dto.reviewerUserIds, user.id)
+      ? await this.reviewers.validReviewerUserIds(
+          dto.reviewerUserIds,
+          existingReview.ownerId,
+        )
       : null;
     const existingReviewerIds = new Set(
       existingReview.reviewers.map((reviewer) => reviewer.userId),
@@ -315,7 +334,7 @@ export class ReviewsService {
 
   async delete(user: User, reviewId: string): Promise<DeletionResponseDto> {
     const existingReview = await findReviewOrThrow(this.prisma, reviewId);
-    assertIsOwner(user, existingReview);
+    assertCanManage(user, existingReview);
 
     await this.prisma.review.delete({ where: { id: reviewId } });
 

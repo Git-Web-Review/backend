@@ -39,6 +39,13 @@ export class ReviewResponseDto implements Review {
   @ApiProperty({ type: () => ReviewUserSummaryResponseDto })
   owner!: ReviewUserSummaryResponseDto;
 
+  @ApiProperty({
+    type: [String],
+    description:
+      "Owners of the review's project. They manage the review as its owner does.",
+  })
+  projectOwnerIds!: string[];
+
   @ApiProperty({ type: String, nullable: true })
   sourceProject!: string | null;
 
