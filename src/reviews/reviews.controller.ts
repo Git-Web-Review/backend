@@ -4,15 +4,26 @@ import { ApiAuthenticatedController } from "../auth/api-controller.decorators";
 import { ThrottleGit } from "../common/throttling/throttling.module";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { DeletionResponseDto } from "../common/dto/deletion-response.dto";
-import { ApiEndpoint, ApiTag, UuidParam } from "../common/swagger";
+import {
+  ApiEndpoint,
+  ApiTag,
+  DocumentedParam,
+  UuidParam,
+} from "../common/swagger";
 import { AddReviewReviewersDto } from "./dto/add-review-reviewers.dto";
 import { CreateReviewCommentDto } from "./dto/create-review-comment.dto";
 import { CreateReviewCommentMessageDto } from "./dto/create-review-comment-message.dto";
 import { CreateReviewDto } from "./dto/create-review.dto";
 import { PreviewReviewDto } from "./dto/preview-review.dto";
 import { ReviewCommentResponseDto } from "./dto/review-comment-response.dto";
-import { ReviewDashboardQueryDto } from "./dto/review-dashboard-query.dto";
-import { ReviewDashboardResponseDto } from "./dto/review-dashboard-response.dto";
+import {
+  ReviewDashboardProjectQueryDto,
+  ReviewDashboardQueryDto,
+} from "./dto/review-dashboard-query.dto";
+import {
+  ReviewDashboardProjectPageResponseDto,
+  ReviewDashboardResponseDto,
+} from "./dto/review-dashboard-response.dto";
 import { ReviewPreviewResponseDto } from "./dto/review-preview-response.dto";
 import { ReviewResponseDto } from "./dto/review-response.dto";
 import { ReviewSyncPreviewResponseDto } from "./dto/review-sync-preview-response.dto";
@@ -54,7 +65,7 @@ export class ReviewsController {
   @ApiEndpoint({
     summary: "Get reviews owned by or assigned to the current user",
     description:
-      "Three independently paginated lists in one call: reviews the caller created, reviews assigned to them, and reviews already closed.",
+      "Three independently paginated lists in one call: reviews the caller created, reviews assigned to them, and reviews already closed. Then the first page of each project the caller owns, with the project reviews that are not already in those lists.",
     response: "Review dashboard returned",
     type: ReviewDashboardResponseDto,
     validation: true,
@@ -64,6 +75,28 @@ export class ReviewsController {
     @Query() query: ReviewDashboardQueryDto,
   ): Promise<ReviewDashboardResponseDto> {
     return this.reviewsService.dashboard(user, query);
+  }
+
+  @Get("dashboard/projects/:project")
+  @ApiEndpoint({
+    summary: "Get a further page of a project the current user owns",
+    description:
+      "The reviews of the project the caller neither created nor reviews, as the dashboard lists them.",
+    response: "Project reviews returned",
+    type: ReviewDashboardProjectPageResponseDto,
+    validation: true,
+    forbidden: "The caller does not own the project",
+  })
+  projectDashboard(
+    @CurrentUser() user: User,
+    @DocumentedParam("project", {
+      description: "Bare repository name of a project the caller owns",
+      example: "vrouter",
+    })
+    project: string,
+    @Query() query: ReviewDashboardProjectQueryDto,
+  ): Promise<ReviewDashboardProjectPageResponseDto> {
+    return this.reviewsService.projectDashboardPage(user, project, query);
   }
 
   @Post("preview")

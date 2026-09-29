@@ -18,6 +18,11 @@ export class ReviewDashboardPageResponseDto {
   totalPages!: number;
 }
 
+export class ReviewDashboardProjectPageResponseDto extends ReviewDashboardPageResponseDto {
+  @ApiProperty({ example: "vrouter" })
+  project!: string;
+}
+
 export class ReviewDashboardResponseDto {
   @ApiProperty({ type: () => ReviewDashboardPageResponseDto })
   owned!: ReviewDashboardPageResponseDto;
@@ -25,12 +30,13 @@ export class ReviewDashboardResponseDto {
   @ApiProperty({ type: () => ReviewDashboardPageResponseDto })
   assigned!: ReviewDashboardPageResponseDto;
 
-  @ApiProperty({
-    type: () => ReviewDashboardPageResponseDto,
-    description: "Open reviews of the projects the caller owns.",
-  })
-  project!: ReviewDashboardPageResponseDto;
-
   @ApiProperty({ type: () => ReviewDashboardPageResponseDto })
   done!: ReviewDashboardPageResponseDto;
+
+  @ApiProperty({
+    type: () => [ReviewDashboardProjectPageResponseDto],
+    description:
+      "One list per project the caller owns, sorted by project name: the reviews of the project, open or closed, the caller neither created nor reviews.",
+  })
+  projects!: ReviewDashboardProjectPageResponseDto[];
 }

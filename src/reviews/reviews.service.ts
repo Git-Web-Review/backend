@@ -1,16 +1,27 @@
-import { Injectable } from "@nestjs/common";
+import { HttpStatus, Injectable } from "@nestjs/common";
 import { Prisma, ReviewStatus, type User } from "@prisma/client";
+import { AppException } from "../common/app.exception";
 import { DeletionResponseDto } from "../common/dto/deletion-response.dto";
+import { ErrorCode } from "../common/error-code.enum";
 import { GitwebUrlRulesService } from "../gitweb-url-rules/gitweb-url-rules.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ProjectDefaultReviewersService } from "../project-default-reviewers/project-default-reviewers.service";
-import { sourceProjectWhere } from "../project-default-reviewers/project-name";
+import {
+  normalizeProjectName,
+  sourceProjectWhere,
+} from "../project-default-reviewers/project-name";
 import { projectsOwnedBy } from "../project-owners/project-owners.service";
 import { AddReviewReviewersDto } from "./dto/add-review-reviewers.dto";
 import { CreateReviewDto } from "./dto/create-review.dto";
 import { PreviewReviewDto } from "./dto/preview-review.dto";
-import { ReviewDashboardQueryDto } from "./dto/review-dashboard-query.dto";
-import { ReviewDashboardResponseDto } from "./dto/review-dashboard-response.dto";
+import {
+  ReviewDashboardProjectQueryDto,
+  ReviewDashboardQueryDto,
+} from "./dto/review-dashboard-query.dto";
+import {
+  ReviewDashboardProjectPageResponseDto,
+  ReviewDashboardResponseDto,
+} from "./dto/review-dashboard-response.dto";
 import { ReviewPreviewResponseDto } from "./dto/review-preview-response.dto";
 import { ReviewResponseDto } from "./dto/review-response.dto";
 import { UpdateReviewDto } from "./dto/update-review.dto";
@@ -59,35 +70,61 @@ export class ReviewsService {
       status: { not: ReviewStatus.CLOSED },
       reviewers: { some: { userId: user.id } },
     } satisfies Prisma.ReviewWhereInput;
-    // Without an owned project, an empty OR matches no review.
-    const ownedProjectsWhere = sourceProjectWhere(
-      await projectsOwnedBy(this.prisma, user.id),
-    );
-    const projectWhere = {
-      status: { not: ReviewStatus.CLOSED },
-      ...ownedProjectsWhere,
-    } satisfies Prisma.ReviewWhereInput;
     const doneWhere = {
       status: ReviewStatus.CLOSED,
-      OR: [
-        { ownerId: user.id },
-        { reviewers: { some: { userId: user.id } } },
-        ownedProjectsWhere,
-      ],
+      OR: [{ ownerId: user.id }, { reviewers: { some: { userId: user.id } } }],
     } satisfies Prisma.ReviewWhereInput;
+    const ownedProjects = (await projectsOwnedBy(this.prisma, user.id)).sort(
+      (left, right) => left.localeCompare(right),
+    );
 
-    const [owned, assigned, project, done] = await Promise.all([
+    const [owned, assigned, done, projects] = await Promise.all([
       this.dashboardPage(ownedWhere, query.ownedPage, query.limit),
       this.dashboardPage(assignedWhere, query.assignedPage, query.limit),
-      this.dashboardPage(projectWhere, query.projectPage, query.limit),
       this.dashboardPage(doneWhere, query.donePage, query.limit),
+      Promise.all(
+        ownedProjects.map(async (project) => ({
+          project,
+          ...(await this.dashboardPage(
+            projectReviewsWhere(user, project),
+            1,
+            query.limit,
+          )),
+        })),
+      ),
     ]);
 
     return {
       owned,
       assigned,
-      project,
       done,
+      projects,
+    };
+  }
+
+  /** A further page of one of the caller's projects on the dashboard. */
+  async projectDashboardPage(
+    user: User,
+    projectName: string,
+    query: ReviewDashboardProjectQueryDto,
+  ): Promise<ReviewDashboardProjectPageResponseDto> {
+    const project = normalizeProjectName(projectName);
+    const ownedProjects = await projectsOwnedBy(this.prisma, user.id);
+    if (!ownedProjects.includes(project)) {
+      throw new AppException(
+        ErrorCode.ROLE_FORBIDDEN,
+        HttpStatus.FORBIDDEN,
+        "Only a project owner can list the project reviews",
+      );
+    }
+
+    return {
+      project,
+      ...(await this.dashboardPage(
+        projectReviewsWhere(user, project),
+        query.page,
+        query.limit,
+      )),
     };
   }
 
@@ -340,6 +377,23 @@ export class ReviewsService {
 
     return { id: reviewId, deleted: true };
   }
+}
+
+/**
+ * The reviews of `project` that are not the caller's own: the dashboard lists
+ * those the caller created or reviews in their personal tabs already.
+ */
+function projectReviewsWhere(
+  user: User,
+  project: string,
+): Prisma.ReviewWhereInput {
+  return {
+    AND: [
+      sourceProjectWhere([project]),
+      { ownerId: { not: user.id } },
+      { reviewers: { none: { userId: user.id } } },
+    ],
+  };
 }
 
 function hasOwnerOnlyUpdate(dto: UpdateReviewDto): boolean {
