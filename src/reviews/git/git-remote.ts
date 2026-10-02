@@ -1,7 +1,12 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ReviewDiffResponseDto } from "../dto/review-diff-file-response.dto";
 import { extractReviewerEmails } from "./commit-message";
 import { parseGitPatch } from "./git-diff";
 import { ensureGitCache, gitPatchId, runGit, runGitPiped } from "./git-runner";
+
+/** How far back a branch is fetched, and so how many commits it can list. */
+const BRANCH_HISTORY_DEPTH = 50;
 
 export type GitCommitOption = {
   hash: string;
@@ -74,7 +79,7 @@ export async function fetchGitBranchCommitOptions(
     "-C",
     repoPath,
     "fetch",
-    "--depth=50",
+    `--depth=${BRANCH_HISTORY_DEPTH}`,
     remoteUrl,
     `+${branch}:refs/gwr/head`,
   ]);
@@ -85,7 +90,7 @@ export async function fetchGitBranchCommitOptions(
       "-C",
       repoPath,
       "fetch",
-      "--depth=50",
+      `--depth=${BRANCH_HISTORY_DEPTH}`,
       remoteUrl,
       "+refs/remotes/origin/master:refs/gwr/origin",
     ]);
@@ -93,16 +98,56 @@ export async function fetchGitBranchCommitOptions(
     upstreamRef = null;
   }
 
-  const logOutput = await runGit([
-    "-C",
-    repoPath,
-    "log",
-    "--max-count=50",
-    "--format=%H%x00%an%x00%ae%x00%aI%x00%s%x00%b%x1e",
-    upstreamRef ? `${upstreamRef}..refs/gwr/head` : "refs/gwr/head",
-  ]);
+  const branchLog = (range: string) =>
+    runGit([
+      "-C",
+      repoPath,
+      "log",
+      `--max-count=${BRANCH_HISTORY_DEPTH}`,
+      "--format=%H%x00%an%x00%ae%x00%aI%x00%s%x00%b%x1e",
+      range,
+    ]);
 
-  return parseBranchLog(logOutput);
+  const ahead = parseBranchLog(
+    await branchLog(
+      upstreamRef ? `${upstreamRef}..refs/gwr/head` : "refs/gwr/head",
+    ),
+  );
+  if (
+    ahead.options.length > 0 ||
+    !upstreamRef ||
+    !(await isCompleteHistory(repoPath, "refs/gwr/head"))
+  ) {
+    return ahead;
+  }
+
+  // A new repository's first commits can only be pushed straight to master,
+  // so nothing is ever ahead of origin/master. While the whole history still
+  // fits in the fetch window, it is what there is to review.
+  return parseBranchLog(await branchLog("refs/gwr/head"));
+}
+
+/**
+ * Whether every commit reachable from `ref` is in the cache: the shallow
+ * fetches cut no parent away, so the history goes down to its root commits.
+ */
+async function isCompleteHistory(
+  repoPath: string,
+  ref: string,
+): Promise<boolean> {
+  const shallowCommits = new Set(
+    (await readFile(join(repoPath, "shallow"), "utf8").catch(() => ""))
+      .split(/\s+/)
+      .filter(Boolean),
+  );
+  const history = (await runGit(["-C", repoPath, "rev-list", ref]))
+    .split(/\s+/)
+    .filter(Boolean);
+
+  return (
+    history.length < BRANCH_HISTORY_DEPTH &&
+    !history.some((hash) => shallowCommits.has(hash))
+  );
 }
 
 function parseBranchLog(logOutput: string): {
