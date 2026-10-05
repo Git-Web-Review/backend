@@ -36,7 +36,7 @@ export class ReviewDashboardResponseDto {
   @ApiProperty({
     type: () => [ReviewDashboardProjectPageResponseDto],
     description:
-      "One list per project the caller owns, sorted by project name: the reviews of the project, open or closed, the caller neither created nor reviews.",
+      "One list per project the caller owns, sorted by project name: all the reviews of the project, open or closed, the caller's own included.",
   })
   projects!: ReviewDashboardProjectPageResponseDto[];
 }

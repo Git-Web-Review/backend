@@ -65,7 +65,7 @@ export class ReviewsController {
   @ApiEndpoint({
     summary: "Get reviews owned by or assigned to the current user",
     description:
-      "Three independently paginated lists in one call: reviews the caller created, reviews assigned to them, and reviews already closed. Then the first page of each project the caller owns, with the project reviews that are not already in those lists.",
+      "Three independently paginated lists in one call: reviews the caller created, reviews assigned to them, and reviews already closed. Then the first page of each project the caller owns, with all the reviews of the project.",
     response: "Review dashboard returned",
     type: ReviewDashboardResponseDto,
     validation: true,
@@ -81,7 +81,7 @@ export class ReviewsController {
   @ApiEndpoint({
     summary: "Get a further page of a project the current user owns",
     description:
-      "The reviews of the project the caller neither created nor reviews, as the dashboard lists them.",
+      "All the reviews of the project, as the dashboard lists them.",
     response: "Project reviews returned",
     type: ReviewDashboardProjectPageResponseDto,
     validation: true,

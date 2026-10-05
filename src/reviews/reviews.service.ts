@@ -86,7 +86,7 @@ export class ReviewsService {
         ownedProjects.map(async (project) => ({
           project,
           ...(await this.dashboardPage(
-            projectReviewsWhere(user, project),
+            projectReviewsWhere(project),
             1,
             query.limit,
           )),
@@ -121,7 +121,7 @@ export class ReviewsService {
     return {
       project,
       ...(await this.dashboardPage(
-        projectReviewsWhere(user, project),
+        projectReviewsWhere(project),
         query.page,
         query.limit,
       )),
@@ -379,21 +379,9 @@ export class ReviewsService {
   }
 }
 
-/**
- * The reviews of `project` that are not the caller's own: the dashboard lists
- * those the caller created or reviews in their personal tabs already.
- */
-function projectReviewsWhere(
-  user: User,
-  project: string,
-): Prisma.ReviewWhereInput {
-  return {
-    AND: [
-      sourceProjectWhere([project]),
-      { ownerId: { not: user.id } },
-      { reviewers: { none: { userId: user.id } } },
-    ],
-  };
+/** All the reviews of `project`, the caller's own included. */
+function projectReviewsWhere(project: string): Prisma.ReviewWhereInput {
+  return sourceProjectWhere([project]);
 }
 
 function hasOwnerOnlyUpdate(dto: UpdateReviewDto): boolean {
