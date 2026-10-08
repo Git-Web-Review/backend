@@ -27,6 +27,11 @@ import {
   snapshotFromMetadata,
   type GitwebMetadata,
 } from "./gitweb-metadata";
+import {
+  gitwebOriginPageUrl,
+  projectFromRemoteUrl,
+  remoteUrlFromGitwebPage,
+} from "./gitweb-origin";
 
 const allowedGitHosts = parseAllowedGitHosts(process.env.GIT_ALLOWED_HOSTS);
 
@@ -38,7 +43,12 @@ export class GitwebMetadataService {
   constructor(private readonly gitwebUrlRules: GitwebUrlRulesService) {}
 
   async fetchGitwebMetadata(gitwebUrl: string): Promise<GitwebMetadata> {
-    const baseMetadata = await this.metadataFromUrl(gitwebUrl);
+    const urlMetadata = await this.metadataFromUrl(gitwebUrl);
+    const baseMetadata = {
+      ...urlMetadata,
+      sourceProject:
+        (await this.originProject(gitwebUrl)) ?? urlMetadata.sourceProject,
+    };
 
     try {
       if (!baseMetadata.remoteUrl) {
@@ -117,6 +127,43 @@ export class GitwebMetadataService {
     } satisfies Omit<GitwebMetadata, "snapshot">;
 
     return { ...metadata, snapshot: snapshotFromMetadata(metadata, null) };
+  }
+
+  /**
+   * The project named by the "origin" remote of the linked repository. The
+   * URL only gives the folder it was cloned into, which a user may rename;
+   * gitweb's remotes page shows where it was cloned from. Null when that page
+   * cannot be read: the folder name stays the project.
+   */
+  private async originProject(gitwebUrl: string): Promise<string | null> {
+    try {
+      const pageUrl = gitwebOriginPageUrl(
+        /^https?:/i.test(gitwebUrl)
+          ? gitwebUrl
+          : ((await this.gitwebUrlRules.gitwebProjectUrl(gitwebUrl)) ?? ""),
+      );
+      if (!pageUrl) {
+        return null;
+      }
+      assertGitHostAllowed(pageUrl, allowedGitHosts);
+
+      const response = await fetch(pageUrl, {
+        redirect: "error",
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) {
+        return null;
+      }
+      const originUrl = remoteUrlFromGitwebPage(await response.text());
+      return originUrl ? projectFromRemoteUrl(originUrl) || null : null;
+    } catch (error) {
+      this.logger.warn(
+        `Could not read the origin remote of ${gitwebUrl}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
   }
 
   /**
