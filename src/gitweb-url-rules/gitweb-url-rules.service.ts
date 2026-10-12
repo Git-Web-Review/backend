@@ -283,6 +283,14 @@ export class GitwebUrlRulesService implements OnModuleInit {
       }
     }
 
+    // gitweb links may name a branch by its full ref (h=refs/heads/foo):
+    // keep the short name, which is what ls-remote and fetch compare against.
+    for (const key of ["HEAD", "BRANCH"]) {
+      if (variables[key]) {
+        variables[key] = variables[key].replace(/^refs\/heads\//, "");
+      }
+    }
+
     // A HEAD capture can hold either a commit hash (commitdiff views) or a
     // branch name (summary views): route it accordingly.
     if (variables.HEAD && isLikelyCommitHash(variables.HEAD)) {
