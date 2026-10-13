@@ -23,7 +23,7 @@ const DNS_TIMEOUT_MS = 2000;
 export class WebhookUrlService {
   private readonly logger = new Logger(WebhookUrlService.name);
   private readonly allowedHosts: string[];
-  private readonly blockPrivateNetworks: boolean;
+  readonly blockPrivateNetworks: boolean;
 
   constructor(config: ConfigService) {
     this.allowedHosts = parseAllowedHosts(

@@ -16,6 +16,7 @@ import { UserAwareThrottlerGuard } from "./user-aware-throttler.guard";
 const DEFAULT_PER_MINUTE = 300;
 const AUTH_PER_MINUTE = 10;
 const GIT_PER_MINUTE = 20;
+const WEBHOOK_TEST_PER_MINUTE = 10;
 
 /**
  * Read from `process.env` rather than `ConfigService`: decorators are evaluated
@@ -53,6 +54,21 @@ export function ThrottleGit(): MethodDecorator & ClassDecorator {
     Throttle({
       default: {
         limit: perMinute("THROTTLE_GIT_PER_MINUTE", GIT_PER_MINUTE),
+        ttl: seconds(60),
+      },
+    }),
+  );
+}
+
+/** Routes that POST to a user-supplied URL and wait for its answer. */
+export function ThrottleWebhookTest(): MethodDecorator & ClassDecorator {
+  return applyDecorators(
+    Throttle({
+      default: {
+        limit: perMinute(
+          "THROTTLE_WEBHOOK_TEST_PER_MINUTE",
+          WEBHOOK_TEST_PER_MINUTE,
+        ),
         ttl: seconds(60),
       },
     }),

@@ -3,7 +3,10 @@ import {
   Delete,
   Get,
   Header,
+  HttpCode,
+  HttpStatus,
   Patch,
+  Post,
   Query,
   Res,
   StreamableFile,
@@ -16,6 +19,7 @@ import { User } from "@prisma/client";
 import { Response } from "express";
 import { ApiAuthenticatedController } from "../auth/api-controller.decorators";
 import { CurrentUser } from "../auth/current-user.decorator";
+import { ThrottleWebhookTest } from "../common/throttling/throttling.module";
 import {
   ApiEndpoint,
   ApiImageUpload,
@@ -25,6 +29,7 @@ import {
 import { CurrentUserResponseDto } from "./dto/current-user-response.dto";
 import { ReviewerCandidatePageResponseDto } from "./dto/reviewer-candidate-page-response.dto";
 import { SearchReviewerCandidatesQueryDto } from "./dto/search-reviewer-candidates-query.dto";
+import { TestWebhookDto } from "./dto/test-webhook.dto";
 import { UpdateUserSettingsDto } from "./dto/update-user-settings.dto";
 import { UserProfileImageRemovalResponseDto } from "./dto/user-profile-image-removal-response.dto";
 import { UserProfileImageResponseDto } from "./dto/user-profile-image-response.dto";
@@ -80,6 +85,23 @@ export class UsersController {
     @Body() dto: UpdateUserSettingsDto,
   ): Promise<UserSettingsResponseDto> {
     return this.usersService.updateSettings(user.id, dto);
+  }
+
+  @Post("settings/webhook-test")
+  @HttpCode(HttpStatus.OK)
+  @ThrottleWebhookTest()
+  @ApiEndpoint({
+    summary: "Send a test event to a webhook URL",
+    description:
+      "POSTs a `TEST` event, shaped like the relay's deliveries, to the URL and expects a 2xx within 5 seconds. Fails with `WEBHOOK_URL_NOT_ALLOWED` for a URL the relay would refuse, or `WEBHOOK_TEST_FAILED` when the endpoint is unreachable or answers anything else. Nothing is saved.",
+    response: "The endpoint answered 2xx",
+    validation: true,
+  })
+  testWebhook(
+    @CurrentUser() user: User,
+    @Body() dto: TestWebhookDto,
+  ): Promise<void> {
+    return this.usersService.testWebhook(user.id, dto.webhookUrl);
   }
 
   @Patch("profile-image")

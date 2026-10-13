@@ -17,6 +17,7 @@ import { SearchReviewerCandidatesQueryDto } from "./dto/search-reviewer-candidat
 import { UserProfileImageRemovalResponseDto } from "./dto/user-profile-image-removal-response.dto";
 import { UserProfileImageResponseDto } from "./dto/user-profile-image-response.dto";
 import { UpdateUserSettingsDto } from "./dto/update-user-settings.dto";
+import { WebhookTestService } from "./webhook-test.service";
 import { WebhookUrlService } from "./webhook-url.service";
 import { profileImageMaxBytesFromValue } from "./profile-image.config";
 import type { UploadedProfileImageFile } from "./types/uploaded-profile-image-file";
@@ -77,7 +78,18 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly webhookUrls: WebhookUrlService,
+    private readonly webhookTests: WebhookTestService,
   ) {}
+
+  async testWebhook(userId: string, webhookUrl: string): Promise<void> {
+    const user = await this.getMe(userId);
+    await this.webhookTests.assertReachable(webhookUrl, {
+      id: user.id,
+      email: user.email,
+      nickname: user.settings?.nickname ?? null,
+      locale: user.settings?.locale ?? null,
+    });
+  }
 
   async getMe(userId: string): Promise<UserWithSettings> {
     const user = await this.prisma.user.findUnique({
@@ -181,9 +193,27 @@ export class UsersService {
       );
     }
 
-    // Refuse right away a target the relay would otherwise drop in silence.
+    // Refuse right away a target the relay would otherwise drop in silence,
+    // and, when it is about to start receiving notifications, one that does
+    // not answer.
     if (webhookUrl) {
-      await this.webhookUrls.assertAllowed(webhookUrl);
+      const current = await this.prisma.userSettings.findUnique({
+        where: { userId },
+        select: { webhookUrl: true, webhookNotificationsEnabled: true },
+      });
+      const enabled =
+        dto.webhookNotificationsEnabled ??
+        current?.webhookNotificationsEnabled ??
+        false;
+      const newlyEnabled =
+        enabled &&
+        (webhookUrl !== current?.webhookUrl ||
+          !current?.webhookNotificationsEnabled);
+      if (newlyEnabled) {
+        await this.testWebhook(userId, webhookUrl);
+      } else {
+        await this.webhookUrls.assertAllowed(webhookUrl);
+      }
     }
 
     return this.prisma.$transaction(async (tx) => {
