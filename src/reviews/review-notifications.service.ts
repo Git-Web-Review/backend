@@ -301,6 +301,7 @@ export class ReviewNotificationsService {
     const actor = await this.actorPayload(actorUserId);
     return {
       ...this.reviewPayload(review),
+      commentNumber: comment.number,
       commitHash: comment.commitHash,
       filePath: comment.filePath,
       lineNumber: comment.lineNumber,

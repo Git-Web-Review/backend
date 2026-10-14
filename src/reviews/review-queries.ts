@@ -74,6 +74,7 @@ export type ReviewCommitWithAcks = Prisma.ReviewCommitGetPayload<{
 }>;
 
 export type CommentLocation = {
+  number: number;
   commitHash: string | null;
   filePath: string | null;
   lineNumber: number | null;
