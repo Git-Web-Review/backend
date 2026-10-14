@@ -1,6 +1,7 @@
 model ReviewComment {
     id         String            @id @default(uuid())
     reviewId   String            @map("review_id")
+    number     Int
     review     Review            @relation(fields: [reviewId], references: [id], onDelete: Cascade)
     commitHash String?           @map("commit_hash")
     filePath   String?           @map("file_path")
@@ -15,6 +16,7 @@ model ReviewComment {
 
     messages ReviewCommentMessage[]
 
+    @@unique([reviewId, number])
     @@index([reviewId, commitHash, filePath, lineNumber])
     @@map("review_comments")
 }

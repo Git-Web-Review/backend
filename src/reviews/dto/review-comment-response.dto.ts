@@ -9,6 +9,12 @@ export class ReviewCommentResponseDto {
   @ApiProperty()
   commentId!: string;
 
+  @ApiProperty({
+    description:
+      "Short comment number, unique within the review. Used in comment links.",
+  })
+  commentNumber!: number;
+
   @ApiProperty()
   reviewId!: string;
 

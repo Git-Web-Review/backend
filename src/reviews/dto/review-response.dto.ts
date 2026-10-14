@@ -33,6 +33,11 @@ export class ReviewResponseDto implements Review {
   @ApiProperty()
   version!: number;
 
+  @ApiProperty({
+    description: "Last comment number given out in this review.",
+  })
+  commentSeq!: number;
+
   @ApiProperty()
   ownerId!: string;
 

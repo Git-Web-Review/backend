@@ -56,21 +56,31 @@ export class ReviewCommentsService {
     assertCanRead(user, review);
     const message = requireMessage(dto.message);
 
-    const comment = await this.prisma.reviewComment.create({
-      data: {
-        reviewId,
-        commitHash: nullIfBlank(dto.commitHash),
-        filePath: nullIfBlank(dto.filePath),
-        lineNumber: dto.lineNumber ?? null,
-        side: dto.side ?? ReviewCommentSide.AFTER,
-        messages: {
-          create: {
-            fromId: user.id,
-            message,
+    const comment = await this.prisma.$transaction(async (tx) => {
+      // Row lock on the review serializes concurrent comment creations.
+      const { commentSeq } = await tx.review.update({
+        where: { id: reviewId },
+        data: { commentSeq: { increment: 1 } },
+        select: { commentSeq: true },
+      });
+
+      return tx.reviewComment.create({
+        data: {
+          reviewId,
+          number: commentSeq,
+          commitHash: nullIfBlank(dto.commitHash),
+          filePath: nullIfBlank(dto.filePath),
+          lineNumber: dto.lineNumber ?? null,
+          side: dto.side ?? ReviewCommentSide.AFTER,
+          messages: {
+            create: {
+              fromId: user.id,
+              message,
+            },
           },
         },
-      },
-      include: reviewCommentInclude,
+        include: reviewCommentInclude,
+      });
     });
 
     await this.afterMessagePosted(user, review, comment, message);

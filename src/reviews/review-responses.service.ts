@@ -71,6 +71,7 @@ export class ReviewResponsesService {
       comment.messages.map((message) => ({
         id: message.id,
         commentId: comment.id,
+        commentNumber: comment.number,
         reviewId: comment.reviewId,
         commitHash: comment.commitHash,
         filePath: comment.filePath,

@@ -5,6 +5,7 @@ model Review {
   description      String?
   status           ReviewStatus @default(PENDING)
   version          Int          @default(1)
+  commentSeq       Int          @default(0) @map("comment_seq")
   ownerId          String       @map("owner_id")
   owner            User         @relation("review_owner", fields: [ownerId], references: [id])
   sourceProject    String?      @map("source_project")
