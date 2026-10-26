@@ -7,7 +7,7 @@ import { ReviewResponseDto } from "./dto/review-response.dto";
 import { runGit, ensureGitCache } from "./git/git-runner";
 import type { GitwebMetadata } from "./gitweb/gitweb-metadata";
 import { GitwebMetadataService } from "./gitweb/gitweb-metadata.service";
-import { assertCanManage } from "./review-access";
+import { assertIsOwnerOrReviewer } from "./review-access";
 import { ReviewNotificationsService } from "./review-notifications.service";
 import {
   findReviewOrThrow,
@@ -16,7 +16,7 @@ import {
 } from "./review-queries";
 import { ReviewResponsesService } from "./review-responses.service";
 
-/** Closing reviews, by their owner or once their commits reached master. */
+/** Closing reviews, by their owner or a reviewer, or once their commits reached master. */
 @Injectable()
 export class ReviewClosingService {
   constructor(
@@ -28,7 +28,11 @@ export class ReviewClosingService {
 
   async close(user: User, reviewId: string): Promise<ReviewResponseDto> {
     const review = await findReviewOrThrow(this.prisma, reviewId);
-    assertCanManage(user, review);
+    assertIsOwnerOrReviewer(
+      user,
+      review,
+      "Only the review owner or reviewers can close the review",
+    );
 
     if (review.status === ReviewStatus.CLOSED) {
       return this.responses.toResponse(review);
