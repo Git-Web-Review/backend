@@ -31,4 +31,7 @@ export class UserSettingsResponseDto implements UserSettings {
 
   @ApiProperty({ type: Object })
   notificationPreferences!: Prisma.JsonValue;
+
+  @ApiProperty({ type: Object })
+  notificationFormats!: Prisma.JsonValue;
 }

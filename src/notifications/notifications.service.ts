@@ -8,6 +8,7 @@ import { ListNotificationsQueryDto } from "./dto/list-notifications-query.dto";
 import {
   notificationCategory,
   notificationCategoryEnabled,
+  notificationFormats,
 } from "./notification-preferences";
 
 const USER_NOTIFICATION_CHANNEL_PREFIX = "notifications:user";
@@ -127,6 +128,10 @@ export class NotificationsService {
         category,
       );
 
+    const formats = notificationFormats(
+      settings?.notificationFormats,
+      notification.type,
+    );
     const event = {
       type: notification.type,
       notificationId: notification.id,
@@ -137,7 +142,9 @@ export class NotificationsService {
         locale: settings?.locale ?? "FR",
         ircNotificationsEnabled: ircEnabled,
         ircNickname: ircEnabled ? (settings?.ircNickname ?? null) : null,
+        ircFormat: ircEnabled ? formats.irc : null,
         mailNotificationsEnabled: mailEnabled,
+        mailFormat: mailEnabled ? formats.mail : null,
         webhookNotificationsEnabled: webhookEnabled,
         webhookUrl: webhookEnabled ? (settings?.webhookUrl ?? null) : null,
       },

@@ -235,8 +235,11 @@ export class UsersService {
           ircNickname,
           webhookNotificationsEnabled: dto.webhookNotificationsEnabled,
           webhookUrl,
-          notificationPreferences: this.notificationPreferencesJson(
+          notificationPreferences: this.settingsJson(
             dto.notificationPreferences,
+          ),
+          notificationFormats: this.settingsJson(
+            dto.notificationFormats,
           ),
         },
         create: {
@@ -250,14 +253,18 @@ export class UsersService {
           webhookNotificationsEnabled: dto.webhookNotificationsEnabled ?? false,
           webhookUrl,
           notificationPreferences:
-            this.notificationPreferencesJson(dto.notificationPreferences) ?? {},
+            this.settingsJson(dto.notificationPreferences) ?? {},
+          notificationFormats:
+            this.settingsJson(dto.notificationFormats) ?? {},
         },
       });
     });
   }
 
-  private notificationPreferencesJson(
-    preferences: UpdateUserSettingsDto["notificationPreferences"],
+  private settingsJson(
+    preferences:
+      | UpdateUserSettingsDto["notificationPreferences"]
+      | UpdateUserSettingsDto["notificationFormats"],
   ): Prisma.InputJsonObject | undefined {
     if (preferences === undefined) {
       return undefined;

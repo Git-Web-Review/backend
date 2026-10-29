@@ -11,6 +11,7 @@ model UserSettings {
     webhookNotificationsEnabled Boolean    @default(false) @map("webhook_notifications_enabled")
     webhookUrl                  String?    @map("webhook_url")
     notificationPreferences     Json       @default("{}") @map("notification_preferences")
+    notificationFormats         Json       @default("{}") @map("notification_formats")
 
     @@map("user_settings")
 }

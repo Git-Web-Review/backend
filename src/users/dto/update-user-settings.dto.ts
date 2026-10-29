@@ -10,7 +10,11 @@ import {
   MaxLength,
   ValidateNested,
 } from "class-validator";
-import { IsIrcTarget, IsSingleLine } from "../../common/validators/text.validators";
+import {
+  IsIrcTarget,
+  IsPlainText,
+  IsSingleLine,
+} from "../../common/validators/text.validators";
 
 export class NotificationMediumPreferencesDto {
   @ApiPropertyOptional({ example: true })
@@ -67,6 +71,74 @@ export class NotificationPreferencesDto {
   @ValidateNested()
   @Type(() => NotificationMediumPreferencesDto)
   webhook?: NotificationMediumPreferencesDto;
+}
+
+const NOTIFICATION_FORMAT_MAX_LENGTH = 500;
+
+/** printf-style formats, one per notification type; see the relays. */
+export class NotificationTypeFormatsDto {
+  @ApiPropertyOptional({ example: "%t by %a %u" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(NOTIFICATION_FORMAT_MAX_LENGTH)
+  @IsPlainText()
+  TEXT?: string;
+
+  @ApiPropertyOptional({ example: "%t by %a %u" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(NOTIFICATION_FORMAT_MAX_LENGTH)
+  @IsPlainText()
+  REVIEW_PENDING?: string;
+
+  @ApiPropertyOptional({ example: "%t by %a %u" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(NOTIFICATION_FORMAT_MAX_LENGTH)
+  @IsPlainText()
+  REVIEW_STATUS_CHANGED?: string;
+
+  @ApiPropertyOptional({ example: "%t by %a %u" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(NOTIFICATION_FORMAT_MAX_LENGTH)
+  @IsPlainText()
+  COMMENT_RECEIVED?: string;
+
+  @ApiPropertyOptional({ example: "%t by %a %u" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(NOTIFICATION_FORMAT_MAX_LENGTH)
+  @IsPlainText()
+  COMMENT_MENTION?: string;
+
+  @ApiPropertyOptional({ example: "%t by %a %u" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(NOTIFICATION_FORMAT_MAX_LENGTH)
+  @IsPlainText()
+  COMMIT_REVIEWED?: string;
+
+  @ApiPropertyOptional({ example: "%t by %a %u" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(NOTIFICATION_FORMAT_MAX_LENGTH)
+  @IsPlainText()
+  REVIEW_NEW_VERSION?: string;
+}
+
+export class NotificationFormatsDto {
+  @ApiPropertyOptional({ type: NotificationTypeFormatsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationTypeFormatsDto)
+  irc?: NotificationTypeFormatsDto;
+
+  @ApiPropertyOptional({ type: NotificationTypeFormatsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationTypeFormatsDto)
+  mail?: NotificationTypeFormatsDto;
 }
 
 export class UpdateUserSettingsDto {
@@ -154,4 +226,10 @@ export class UpdateUserSettingsDto {
   @ValidateNested()
   @Type(() => NotificationPreferencesDto)
   notificationPreferences?: NotificationPreferencesDto;
+
+  @ApiPropertyOptional({ type: NotificationFormatsDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationFormatsDto)
+  notificationFormats?: NotificationFormatsDto;
 }

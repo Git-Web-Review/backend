@@ -75,3 +75,23 @@ export function notificationCategoryEnabled(
   const value = (mediumPreferences as Record<string, unknown>)[category];
   return typeof value === "boolean" ? value : true;
 }
+
+/** The user's own printf-style format for this type, per medium, if any. */
+export function notificationFormats(
+  formats: unknown,
+  type: NotificationType,
+): Record<"irc" | "mail", string | null> {
+  const formatFor = (medium: "irc" | "mail") => {
+    const mediumFormats =
+      formats && typeof formats === "object"
+        ? (formats as Record<string, unknown>)[medium]
+        : null;
+    const value =
+      mediumFormats && typeof mediumFormats === "object"
+        ? (mediumFormats as Record<string, unknown>)[type]
+        : null;
+    return typeof value === "string" && value.trim() ? value : null;
+  };
+
+  return { irc: formatFor("irc"), mail: formatFor("mail") };
+}
