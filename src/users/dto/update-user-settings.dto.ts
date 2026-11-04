@@ -73,7 +73,7 @@ export class NotificationPreferencesDto {
   webhook?: NotificationMediumPreferencesDto;
 }
 
-const NOTIFICATION_FORMAT_MAX_LENGTH = 500;
+export const NOTIFICATION_FORMAT_MAX_LENGTH = 500;
 
 /** printf-style formats, one per notification type; see the relays. */
 export class NotificationTypeFormatsDto {

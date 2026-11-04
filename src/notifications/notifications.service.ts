@@ -1,5 +1,11 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
-import { NotificationType, Prisma, type Notification } from "@prisma/client";
+import {
+  NotificationType,
+  Prisma,
+  type Notification,
+  type User,
+  type UserSettings,
+} from "@prisma/client";
 import { AppException } from "../common/app.exception";
 import { ErrorCode } from "../common/error-code.enum";
 import { PrismaService } from "../prisma/prisma.service";
@@ -10,6 +16,7 @@ import {
   notificationCategoryEnabled,
   notificationFormats,
 } from "./notification-preferences";
+import { NOTIFICATION_TEST_PAYLOAD } from "./notification-test-sample";
 
 const USER_NOTIFICATION_CHANNEL_PREFIX = "notifications:user";
 const IRC_NOTIFICATION_CHANNEL = "notifications:irc";
@@ -163,5 +170,54 @@ export class NotificationsService {
     ]);
 
     return notification;
+  }
+
+  /**
+   * Sends a made-up notification of this type to the user alone, over one
+   * medium, rendered with the given format (empty for the default template).
+   * Nothing is stored, and neither the in-app feed nor the webhook gets it.
+   */
+  async sendTest(
+    user: User & { settings: UserSettings | null },
+    medium: "irc" | "mail",
+    type: NotificationType,
+    format: string | undefined,
+  ): Promise<void> {
+    const settings = user.settings;
+    const ircNickname = settings?.ircNickname?.trim() || null;
+    if (medium === "irc" && !ircNickname) {
+      throw new AppException(
+        ErrorCode.NOTIFICATION_TEST_UNAVAILABLE,
+        HttpStatus.BAD_REQUEST,
+        "Save an IRC nickname first",
+      );
+    }
+
+    const trimmed = format?.trim() ? format : null;
+    const event = {
+      type,
+      notificationId: null,
+      test: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        nickname: settings?.nickname ?? null,
+        locale: settings?.locale ?? "FR",
+        ircNotificationsEnabled: medium === "irc",
+        ircNickname: medium === "irc" ? ircNickname : null,
+        ircFormat: medium === "irc" ? trimmed : null,
+        mailNotificationsEnabled: medium === "mail",
+        mailFormat: medium === "mail" ? trimmed : null,
+        webhookNotificationsEnabled: false,
+        webhookUrl: null,
+      },
+      payload: NOTIFICATION_TEST_PAYLOAD,
+      createdAt: new Date().toISOString(),
+    };
+
+    await this.redis.publish(
+      medium === "irc" ? IRC_NOTIFICATION_CHANNEL : EMAIL_NOTIFICATION_CHANNEL,
+      event,
+    );
   }
 }

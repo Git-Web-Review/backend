@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { UserProfileImagesController } from "./user-profile-images.controller";
 import { UsersController } from "./users.controller";
 import { UsersService } from "./users.service";
@@ -7,7 +8,7 @@ import { WebhookTestService } from "./webhook-test.service";
 import { WebhookUrlService } from "./webhook-url.service";
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, NotificationsModule],
   controllers: [UsersController, UserProfileImagesController],
   providers: [UsersService, WebhookUrlService, WebhookTestService],
   exports: [UsersService],

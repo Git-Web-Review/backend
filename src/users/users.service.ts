@@ -11,9 +11,11 @@ import {
   detectImageFormat,
   SUPPORTED_IMAGE_MIME_TYPES,
 } from "../common/image-upload";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { ReviewerCandidatePageResponseDto } from "./dto/reviewer-candidate-page-response.dto";
 import { SearchReviewerCandidatesQueryDto } from "./dto/search-reviewer-candidates-query.dto";
+import { TestNotificationFormatDto } from "./dto/test-notification-format.dto";
 import { UserProfileImageRemovalResponseDto } from "./dto/user-profile-image-removal-response.dto";
 import { UserProfileImageResponseDto } from "./dto/user-profile-image-response.dto";
 import { UpdateUserSettingsDto } from "./dto/update-user-settings.dto";
@@ -79,7 +81,16 @@ export class UsersService {
     private readonly config: ConfigService,
     private readonly webhookUrls: WebhookUrlService,
     private readonly webhookTests: WebhookTestService,
+    private readonly notifications: NotificationsService,
   ) {}
+
+  async testNotificationFormat(
+    userId: string,
+    dto: TestNotificationFormatDto,
+  ): Promise<void> {
+    const user = await this.getMe(userId);
+    await this.notifications.sendTest(user, dto.medium, dto.type, dto.format);
+  }
 
   async testWebhook(userId: string, webhookUrl: string): Promise<void> {
     const user = await this.getMe(userId);

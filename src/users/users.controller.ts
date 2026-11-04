@@ -19,7 +19,10 @@ import { User } from "@prisma/client";
 import { Response } from "express";
 import { ApiAuthenticatedController } from "../auth/api-controller.decorators";
 import { CurrentUser } from "../auth/current-user.decorator";
-import { ThrottleWebhookTest } from "../common/throttling/throttling.module";
+import {
+  ThrottleNotificationTest,
+  ThrottleWebhookTest,
+} from "../common/throttling/throttling.module";
 import {
   ApiEndpoint,
   ApiImageUpload,
@@ -29,6 +32,7 @@ import {
 import { CurrentUserResponseDto } from "./dto/current-user-response.dto";
 import { ReviewerCandidatePageResponseDto } from "./dto/reviewer-candidate-page-response.dto";
 import { SearchReviewerCandidatesQueryDto } from "./dto/search-reviewer-candidates-query.dto";
+import { TestNotificationFormatDto } from "./dto/test-notification-format.dto";
 import { TestWebhookDto } from "./dto/test-webhook.dto";
 import { UpdateUserSettingsDto } from "./dto/update-user-settings.dto";
 import { UserProfileImageRemovalResponseDto } from "./dto/user-profile-image-removal-response.dto";
@@ -102,6 +106,23 @@ export class UsersController {
     @Body() dto: TestWebhookDto,
   ): Promise<void> {
     return this.usersService.testWebhook(user.id, dto.webhookUrl);
+  }
+
+  @Post("settings/notification-test")
+  @HttpCode(HttpStatus.OK)
+  @ThrottleNotificationTest()
+  @ApiEndpoint({
+    summary: "Send yourself a test notification",
+    description:
+      "Publishes a made-up notification of `type` to the IRC or email relay, for the caller only, rendered with `format` (saved or not; empty for the default template). The relay delivers it even when the channel is disabled. Fails with `NOTIFICATION_TEST_UNAVAILABLE` for IRC without a saved nickname. Nothing is saved; delivery is asynchronous.",
+    response: "The test notification was handed to the relay",
+    validation: true,
+  })
+  testNotificationFormat(
+    @CurrentUser() user: User,
+    @Body() dto: TestNotificationFormatDto,
+  ): Promise<void> {
+    return this.usersService.testNotificationFormat(user.id, dto);
   }
 
   @Patch("profile-image")
