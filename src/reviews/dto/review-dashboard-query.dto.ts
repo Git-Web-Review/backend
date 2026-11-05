@@ -45,6 +45,19 @@ export class ReviewDashboardQueryDto {
   donePage = 1;
 
   @ApiPropertyOptional({
+    description:
+      "Page of every open review, 1-based. Only listed for admins.",
+    minimum: 1,
+    default: 1,
+    example: 1,
+  })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  allPage = 1;
+
+  @ApiPropertyOptional({
     description: "Number of reviews per page, applied to all three lists.",
     minimum: 1,
     maximum: 50,

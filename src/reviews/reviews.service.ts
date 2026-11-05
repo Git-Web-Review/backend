@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
-import { Prisma, ReviewStatus, type User } from "@prisma/client";
+import { Prisma, ReviewStatus, UserRole, type User } from "@prisma/client";
 import { AppException } from "../common/app.exception";
 import { DeletionResponseDto } from "../common/dto/deletion-response.dto";
 import { ErrorCode } from "../common/error-code.enum";
@@ -78,10 +78,17 @@ export class ReviewsService {
       (left, right) => left.localeCompare(right),
     );
 
-    const [owned, assigned, done, projects] = await Promise.all([
+    const allWhere = {
+      status: { not: ReviewStatus.CLOSED },
+    } satisfies Prisma.ReviewWhereInput;
+
+    const [owned, assigned, done, all, projects] = await Promise.all([
       this.dashboardPage(ownedWhere, query.ownedPage, query.limit),
       this.dashboardPage(assignedWhere, query.assignedPage, query.limit),
       this.dashboardPage(doneWhere, query.donePage, query.limit),
+      user.role === UserRole.ADMIN
+        ? this.dashboardPage(allWhere, query.allPage, query.limit)
+        : null,
       Promise.all(
         ownedProjects.map(async (project) => ({
           project,
@@ -98,6 +105,7 @@ export class ReviewsService {
       owned,
       assigned,
       done,
+      all,
       projects,
     };
   }

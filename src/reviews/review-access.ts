@@ -4,14 +4,17 @@ import { AppException } from "../common/app.exception";
 import { ErrorCode } from "../common/error-code.enum";
 import type { ReviewWithAccess, ReviewWithRelations } from "./review-queries";
 
-/** The review owner, or an owner of the review's project. */
+/** An admin, the review owner, or an owner of the review's project. */
 export function canManage(user: User, review: ReviewWithAccess): boolean {
-  return review.ownerId === user.id || review.projectOwnerIds.includes(user.id);
+  return (
+    user.role === UserRole.ADMIN ||
+    review.ownerId === user.id ||
+    review.projectOwnerIds.includes(user.id)
+  );
 }
 
 export function assertCanRead(user: User, review: ReviewWithAccess): void {
   if (
-    user.role === UserRole.ADMIN ||
     canManage(user, review) ||
     review.reviewers.some((reviewer) => reviewer.userId === user.id)
   ) {

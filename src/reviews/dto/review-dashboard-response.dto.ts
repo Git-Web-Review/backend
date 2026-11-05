@@ -34,6 +34,13 @@ export class ReviewDashboardResponseDto {
   done!: ReviewDashboardPageResponseDto;
 
   @ApiProperty({
+    type: () => ReviewDashboardPageResponseDto,
+    nullable: true,
+    description: "Every open review, for admins only; null for other users.",
+  })
+  all!: ReviewDashboardPageResponseDto | null;
+
+  @ApiProperty({
     type: () => [ReviewDashboardProjectPageResponseDto],
     description:
       "One list per project the caller owns, sorted by project name: all the reviews of the project, open or closed, the caller's own included.",
