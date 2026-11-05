@@ -4,6 +4,7 @@ import {
   ExceptionFilter,
   HttpException,
   HttpStatus,
+  Logger,
 } from "@nestjs/common";
 import { Response } from "express";
 import { AppException } from "./app.exception";
@@ -17,6 +18,8 @@ type HttpErrorLike = {
 
 @Catch()
 export class AppExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(AppExceptionFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
@@ -60,6 +63,9 @@ export class AppExceptionFilter implements ExceptionFilter {
       return;
     }
 
+    this.logger.error(
+      exception instanceof Error ? exception.stack : String(exception),
+    );
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       code: ErrorCode.INTERNAL_ERROR,
       message: "Internal server error",
