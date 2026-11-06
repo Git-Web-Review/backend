@@ -19,7 +19,8 @@
         "start": "nest start",
         "start:debug": "nest start --debug 9229 --watch",
         "start:dev": "nest start --watch",
-        "start:prod": "node dist/src/main.js"
+        "start:prod": "node dist/src/main.js",
+        "test": "node --test 'src/**/*.spec.ts'"
     },
     "dependencies": {
         "@nestjs/common": "^11.1.17",

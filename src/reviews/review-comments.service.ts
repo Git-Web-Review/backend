@@ -83,7 +83,13 @@ export class ReviewCommentsService {
       });
     });
 
-    await this.afterMessagePosted(user, review, comment, message);
+    await this.afterMessagePosted(
+      user,
+      review,
+      comment,
+      comment.messages[0].id,
+      message,
+    );
 
     return (await this.responses.toCommentResponses([comment]))[0];
   }
@@ -121,7 +127,17 @@ export class ReviewCommentsService {
       include: reviewCommentInclude,
     });
 
-    await this.afterMessagePosted(user, review, updatedComment, message);
+    // Messages come oldest first: the user's last one is the one just posted.
+    const postedMessage = updatedComment.messages
+      .filter((item) => item.fromId === user.id)
+      .at(-1);
+    await this.afterMessagePosted(
+      user,
+      review,
+      updatedComment,
+      postedMessage!.id,
+      message,
+    );
 
     return this.responses.toCommentResponses([updatedComment]);
   }
@@ -135,10 +151,10 @@ export class ReviewCommentsService {
     const review = await findReviewOrThrow(this.prisma, reviewId);
     assertCanResolveComment(user, review);
 
-    commentOrThrow(
+    const comment = commentOrThrow(
       await this.prisma.reviewComment.findFirst({
         where: { id: commentId, reviewId },
-        select: { id: true },
+        select: { id: true, done: true },
       }),
     );
 
@@ -151,6 +167,14 @@ export class ReviewCommentsService {
     });
 
     await this.status.refreshFromComments(reviewId, user.id);
+    if (comment.done !== dto.done) {
+      await this.reviewNotifications.notifyCommentResolved(
+        review,
+        updatedComment,
+        dto.done,
+        user.id,
+      );
+    }
 
     return this.responses.toCommentResponses([updatedComment]);
   }
@@ -255,6 +279,7 @@ export class ReviewCommentsService {
     await this.reviewNotifications.notifyMentionedUsers(
       review,
       updatedComment,
+      messageId,
       nextMessage,
       message.message,
       user.id,
@@ -268,6 +293,7 @@ export class ReviewCommentsService {
     user: User,
     review: ReviewWithRelations,
     comment: ReviewCommentWithMessages,
+    messageId: string,
     message: string,
   ): Promise<void> {
     await this.status.updateAfterComment(user, review);
@@ -275,6 +301,7 @@ export class ReviewCommentsService {
       await this.reviewNotifications.notifyMentionedUsers(
         review,
         comment,
+        messageId,
         message,
         null,
         user.id,
@@ -282,6 +309,7 @@ export class ReviewCommentsService {
     await this.reviewNotifications.notifyCommentReceived(
       review,
       comment,
+      messageId,
       message,
       user.id,
       mentionedRecipientIds,

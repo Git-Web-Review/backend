@@ -51,6 +51,16 @@ export class NotificationMediumPreferencesDto {
   @IsOptional()
   @IsBoolean()
   commentMention?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  commentResolved?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  commitAcked?: boolean;
 }
 
 export class NotificationPreferencesDto {
@@ -125,6 +135,20 @@ export class NotificationTypeFormatsDto {
   @MaxLength(NOTIFICATION_FORMAT_MAX_LENGTH)
   @IsPlainText()
   REVIEW_NEW_VERSION?: string;
+
+  @ApiPropertyOptional({ example: "%t by %a %u" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(NOTIFICATION_FORMAT_MAX_LENGTH)
+  @IsPlainText()
+  COMMENT_RESOLVED?: string;
+
+  @ApiPropertyOptional({ example: "%t by %a %u" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(NOTIFICATION_FORMAT_MAX_LENGTH)
+  @IsPlainText()
+  COMMIT_ACKED?: string;
 }
 
 export class NotificationFormatsDto {

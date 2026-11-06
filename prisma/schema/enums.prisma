@@ -16,6 +16,8 @@ enum NotificationType {
     COMMENT_MENTION
     COMMIT_REVIEWED
     REVIEW_NEW_VERSION
+    COMMENT_RESOLVED
+    COMMIT_ACKED
 }
 
 enum ReviewStatus {

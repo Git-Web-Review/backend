@@ -24,4 +24,8 @@ export const NOTIFICATION_TEST_PAYLOAD = {
   modifiedCount: 1,
   commitCount: 2,
   commitTitles: ["fix: keep the redirect target", "test: cover the redirect"],
+  commitHash: "3f2a9c1",
+  commitTitle: "fix: keep the redirect target",
+  done: true,
+  acked: true,
 };

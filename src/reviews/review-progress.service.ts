@@ -45,6 +45,14 @@ export class ReviewProgressService {
       update: { acknowledgedAt: new Date() },
       create: { reviewCommitId: commit.id, userId: user.id },
     });
+    if (!hasAcked(commit, user)) {
+      await this.reviewNotifications.notifyCommitAcked(
+        review,
+        commit,
+        true,
+        user.id,
+      );
+    }
 
     return this.refreshedResponse(reviewId, user);
   }
@@ -60,6 +68,14 @@ export class ReviewProgressService {
     await this.prisma.reviewCommitAck.deleteMany({
       where: { reviewCommitId: commit.id, userId: user.id },
     });
+    if (hasAcked(commit, user)) {
+      await this.reviewNotifications.notifyCommitAcked(
+        review,
+        commit,
+        false,
+        user.id,
+      );
+    }
 
     return this.refreshedResponse(reviewId, user);
   }
@@ -217,4 +233,11 @@ export class ReviewProgressService {
     );
     return this.responses.toResponse(updatedReview);
   }
+}
+
+function hasAcked(
+  commit: { acks: { userId: string }[] },
+  user: User,
+): boolean {
+  return commit.acks.some((ack) => ack.userId === user.id);
 }

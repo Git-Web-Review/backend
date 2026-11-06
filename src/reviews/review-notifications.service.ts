@@ -7,6 +7,7 @@ import {
 } from "@prisma/client";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { reviewRecipients, type RecipientRole } from "./comment-recipients";
 import { mentionedUserIds, replaceMentions } from "./mentions";
 import {
   mentionedUsersById,
@@ -116,6 +117,7 @@ export class ReviewNotificationsService {
   async notifyMentionedUsers(
     review: ReviewWithRelations,
     comment: CommentLocation,
+    messageId: string,
     message: string,
     previousMessage: string | null,
     actorUserId: string,
@@ -136,16 +138,22 @@ export class ReviewNotificationsService {
     const payload = await this.commentPayload(
       review,
       comment,
+      messageId,
       message,
       actorUserId,
     );
 
+    // Whoever is mentioned and is not the owner is a reviewer by now.
     await Promise.all(
       recipientIds.map((userId) =>
         this.notifications.createForUser(
           userId,
           NotificationType.COMMENT_MENTION,
-          { ...payload, addedAsReviewer: addedReviewerIds.has(userId) },
+          {
+            ...payload,
+            recipientRole: userId === review.ownerId ? "owner" : "reviewer",
+            addedAsReviewer: addedReviewerIds.has(userId),
+          },
         ),
       ),
     );
@@ -202,32 +210,122 @@ export class ReviewNotificationsService {
     return addedReviewerIds;
   }
 
-  /** The owner is spared this one when the message mentions them already. */
+  /**
+   * A new thread or a reply: the owner, the reviewers and whoever wrote in the
+   * thread hear about it, except its author and the users it mentions, who
+   * got COMMENT_MENTION instead.
+   */
   async notifyCommentReceived(
     review: ReviewWithRelations,
     comment: CommentLocation,
+    messageId: string,
     message: string,
     actorUserId: string,
     mentionedRecipientIds: string[],
   ): Promise<void> {
-    if (
-      review.ownerId === actorUserId ||
-      mentionedRecipientIds.includes(review.ownerId)
-    ) {
+    const recipients = reviewRecipients({
+      ownerId: review.ownerId,
+      reviewerIds: review.reviewers.map((reviewer) => reviewer.userId),
+      threadAuthorIds: comment.messages.map((item) => item.fromId),
+      actorId: actorUserId,
+      excludedIds: mentionedRecipientIds,
+    });
+    if (recipients.size === 0) {
       return;
     }
 
     const payload = await this.commentPayload(
       review,
       comment,
+      messageId,
       message,
       actorUserId,
     );
 
-    await this.notifications.createForUser(
-      review.ownerId,
+    await this.sendToRecipients(
+      recipients,
       NotificationType.COMMENT_RECEIVED,
       payload,
+    );
+  }
+
+  async notifyCommentResolved(
+    review: ReviewWithRelations,
+    comment: CommentLocation,
+    done: boolean,
+    actorUserId: string,
+  ): Promise<void> {
+    const recipients = this.ownerAndReviewers(review, actorUserId);
+    if (recipients.size === 0) {
+      return;
+    }
+
+    const payload = {
+      ...this.reviewPayload(review),
+      commentId: comment.id,
+      commentNumber: comment.number,
+      done,
+      ...(await this.actorPayload(actorUserId)),
+    } satisfies Prisma.InputJsonObject;
+
+    await this.sendToRecipients(
+      recipients,
+      NotificationType.COMMENT_RESOLVED,
+      payload,
+    );
+  }
+
+  async notifyCommitAcked(
+    review: ReviewWithRelations,
+    commit: { id: string; hash: string; title: string },
+    acked: boolean,
+    actorUserId: string,
+  ): Promise<void> {
+    const recipients = this.ownerAndReviewers(review, actorUserId);
+    if (recipients.size === 0) {
+      return;
+    }
+
+    const payload = {
+      ...this.reviewPayload(review),
+      commitId: commit.id,
+      commitHash: commit.hash,
+      commitTitle: commit.title,
+      acked,
+      ...(await this.actorPayload(actorUserId)),
+    } satisfies Prisma.InputJsonObject;
+
+    await this.sendToRecipients(
+      recipients,
+      NotificationType.COMMIT_ACKED,
+      payload,
+    );
+  }
+
+  private ownerAndReviewers(
+    review: ReviewWithRelations,
+    actorUserId: string,
+  ): Map<string, RecipientRole> {
+    return reviewRecipients({
+      ownerId: review.ownerId,
+      reviewerIds: review.reviewers.map((reviewer) => reviewer.userId),
+      actorId: actorUserId,
+    });
+  }
+
+  /** One notification per recipient, telling them in which role they get it. */
+  private async sendToRecipients(
+    recipients: Map<string, RecipientRole>,
+    type: NotificationType,
+    payload: Prisma.InputJsonObject,
+  ): Promise<void> {
+    await Promise.all(
+      [...recipients].map(([userId, recipientRole]) =>
+        this.notifications.createForUser(userId, type, {
+          ...payload,
+          recipientRole,
+        }),
+      ),
     );
   }
 
@@ -295,16 +393,21 @@ export class ReviewNotificationsService {
   private async commentPayload(
     review: ReviewWithRelations,
     comment: CommentLocation,
+    messageId: string,
     message: string,
     actorUserId: string,
   ) {
     const actor = await this.actorPayload(actorUserId);
     return {
       ...this.reviewPayload(review),
+      commentId: comment.id,
       commentNumber: comment.number,
+      messageId,
+      isReply: comment.messages[0]?.id !== messageId,
       commitHash: comment.commitHash,
       filePath: comment.filePath,
       lineNumber: comment.lineNumber,
+      side: comment.side,
       commentExcerpt: await this.commentExcerpt(message),
       ...actor,
     } satisfies Prisma.InputJsonObject;

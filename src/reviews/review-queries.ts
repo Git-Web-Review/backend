@@ -1,5 +1,5 @@
 import { HttpStatus } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { Prisma, type ReviewCommentSide } from "@prisma/client";
 import { AppException } from "../common/app.exception";
 import { ErrorCode } from "../common/error-code.enum";
 import { PrismaService } from "../prisma/prisma.service";
@@ -73,11 +73,15 @@ export type ReviewCommitWithAcks = Prisma.ReviewCommitGetPayload<{
   include: { acks: true };
 }>;
 
+/** A thread as its notifications describe it, messages oldest first. */
 export type CommentLocation = {
+  id: string;
   number: number;
   commitHash: string | null;
   filePath: string | null;
   lineNumber: number | null;
+  side: ReviewCommentSide;
+  messages: { id: string; fromId: string }[];
 };
 
 export async function findReviewOrThrow(

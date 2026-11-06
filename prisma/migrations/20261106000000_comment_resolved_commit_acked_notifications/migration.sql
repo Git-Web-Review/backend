@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "NotificationType" ADD VALUE 'COMMENT_RESOLVED';
+ALTER TYPE "NotificationType" ADD VALUE 'COMMIT_ACKED';
