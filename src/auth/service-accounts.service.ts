@@ -23,11 +23,27 @@ import {
 const SERVICE_EMAIL_DOMAIN = "service.internal";
 
 export type ServiceAccountWithUser = Prisma.ServiceAccountGetPayload<{
-  include: { user: { select: { id: true; email: true; role: true } } };
+  include: {
+    user: {
+      select: {
+        id: true;
+        email: true;
+        role: true;
+        profileImage: { select: { userId: true } };
+      };
+    };
+  };
 }>;
 
 const serviceAccountInclude = {
-  user: { select: { id: true, email: true, role: true } },
+  user: {
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      profileImage: { select: { userId: true } },
+    },
+  },
 } satisfies Prisma.ServiceAccountInclude;
 
 @Injectable()
@@ -268,7 +284,7 @@ export class ServiceAccountsService {
     }
   }
 
-  private async findOrThrow(id: string): Promise<ServiceAccountWithUser> {
+  async findOrThrow(id: string): Promise<ServiceAccountWithUser> {
     const account = await this.prisma.serviceAccount.findUnique({
       where: { id },
       include: serviceAccountInclude,

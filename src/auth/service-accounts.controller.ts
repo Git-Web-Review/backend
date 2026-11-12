@@ -121,6 +121,7 @@ export class ServiceAccountsController {
       userId: account.userId,
       email: account.user.email,
       role: account.user.role,
+      hasProfileImage: !!account.user.profileImage,
       createdAt: account.createdAt,
       updatedAt: account.updatedAt,
     };

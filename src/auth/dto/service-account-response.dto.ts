@@ -29,6 +29,11 @@ export class ServiceAccountResponseDto {
   @ApiProperty({ enum: UserRole, enumName: "UserRole" })
   role!: UserRole;
 
+  @ApiProperty({
+    description: "Whether an avatar was uploaded, served at GET /v1/users/{userId}/profile-image",
+  })
+  hasProfileImage!: boolean;
+
   @ApiProperty()
   createdAt!: Date;
 
