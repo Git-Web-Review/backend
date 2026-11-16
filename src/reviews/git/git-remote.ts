@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { ReviewDiffResponseDto } from "../dto/review-diff-file-response.dto";
 import { extractReviewerEmails } from "./commit-message";
 import { parseGitPatch } from "./git-diff";
+import { defaultBranchFromSymref, UPSTREAM_REFS } from "./remote-refs";
 import { ensureGitCache, gitPatchId, runGit, runGitPiped } from "./git-runner";
 
 /** How far back a branch is fetched, and so how many commits it can list. */
@@ -69,6 +70,44 @@ export async function fetchGitCommitMetadata(
   };
 }
 
+/**
+ * The branch the remote's HEAD points at, for a link that names none; master
+ * when the remote does not say.
+ */
+export async function remoteDefaultBranch(remoteUrl: string): Promise<string> {
+  try {
+    const output = await runGit(["ls-remote", "--symref", remoteUrl, "HEAD"]);
+    return defaultBranchFromSymref(output) ?? "master";
+  } catch {
+    return "master";
+  }
+}
+
+/** Fetches the upstream a branch is compared to into `destination`. */
+export async function fetchUpstream(
+  repoPath: string,
+  remoteUrl: string,
+  depth: number,
+  destination: string,
+): Promise<boolean> {
+  for (const ref of UPSTREAM_REFS) {
+    try {
+      await runGit([
+        "-C",
+        repoPath,
+        "fetch",
+        `--depth=${depth}`,
+        remoteUrl,
+        `+${ref}:${destination}`,
+      ]);
+      return true;
+    } catch {
+      // Not on this remote: try the next one.
+    }
+  }
+  return false;
+}
+
 export async function fetchGitBranchCommitOptions(
   remoteUrl: string,
   branch: string,
@@ -84,19 +123,14 @@ export async function fetchGitBranchCommitOptions(
     `+${branch}:refs/gwr/head`,
   ]);
 
-  let upstreamRef: string | null = "refs/gwr/origin";
-  try {
-    await runGit([
-      "-C",
-      repoPath,
-      "fetch",
-      `--depth=${BRANCH_HISTORY_DEPTH}`,
-      remoteUrl,
-      "+refs/remotes/origin/master:refs/gwr/origin",
-    ]);
-  } catch {
-    upstreamRef = null;
-  }
+  const upstreamRef = (await fetchUpstream(
+    repoPath,
+    remoteUrl,
+    BRANCH_HISTORY_DEPTH,
+    "refs/gwr/origin",
+  ))
+    ? "refs/gwr/origin"
+    : null;
 
   const branchLog = (range: string) =>
     runGit([

@@ -15,6 +15,7 @@ import {
 } from "../git/git-command";
 import {
   fetchGitBranchCommitOptions,
+  remoteDefaultBranch,
   fetchGitCommitMetadata,
   patchIdFromGitDiff,
   selectCommitOptions,
@@ -53,6 +54,11 @@ export class GitwebMetadataService {
     try {
       if (!baseMetadata.remoteUrl) {
         throw new Error("Missing git remote URL in git-web URL");
+      }
+      if (!baseMetadata.sourceBranchFromUrl && !baseMetadata.sourceCommit) {
+        baseMetadata.sourceBranch = await remoteDefaultBranch(
+          baseMetadata.remoteUrl,
+        );
       }
 
       return baseMetadata.linkKind === "SUMMARY"

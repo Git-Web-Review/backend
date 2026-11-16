@@ -4,6 +4,7 @@ import { AppException } from "../common/app.exception";
 import { ErrorCode } from "../common/error-code.enum";
 import { PrismaService } from "../prisma/prisma.service";
 import { ReviewResponseDto } from "./dto/review-response.dto";
+import { fetchUpstream } from "./git/git-remote";
 import { runGit, ensureGitCache } from "./git/git-runner";
 import type { GitwebMetadata } from "./gitweb/gitweb-metadata";
 import { GitwebMetadataService } from "./gitweb/gitweb-metadata.service";
@@ -113,14 +114,16 @@ export class ReviewClosingService {
     }
 
     const repoPath = await ensureGitCache(metadata.remoteUrl);
-    await runGit([
-      "-C",
-      repoPath,
-      "fetch",
-      "--depth=300",
-      metadata.remoteUrl,
-      "+refs/remotes/origin/master:refs/gwr/master",
-    ]);
+    if (
+      !(await fetchUpstream(
+        repoPath,
+        metadata.remoteUrl,
+        300,
+        "refs/gwr/master",
+      ))
+    ) {
+      return false;
+    }
 
     const masterTitles = await this.masterCommitTitles(repoPath);
 
