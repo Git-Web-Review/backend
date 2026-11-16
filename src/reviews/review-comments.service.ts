@@ -296,7 +296,7 @@ export class ReviewCommentsService {
     messageId: string,
     message: string,
   ): Promise<void> {
-    await this.status.updateAfterComment(user, review);
+    await this.status.updateAfterComment(user, review, comment.commitHash);
     const mentionedRecipientIds =
       await this.reviewNotifications.notifyMentionedUsers(
         review,

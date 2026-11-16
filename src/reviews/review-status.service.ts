@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { ReviewCommitStatus, ReviewStatus, type User } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { commitToReopen } from "./commit-reopening";
 import { ReviewNotificationsService } from "./review-notifications.service";
 import {
   findReviewOrThrow,
@@ -19,12 +20,22 @@ export class ReviewStatusService {
     private readonly reviewNotifications: ReviewNotificationsService,
   ) {}
 
+  /** Refresh after a message is posted on a thread of `commitHash`. */
   async updateAfterComment(
     user: User,
     review: ReviewWithRelations,
+    commitHash: string | null,
   ): Promise<void> {
     if (review.status === ReviewStatus.CLOSED) {
       return;
+    }
+
+    const reopened = commitToReopen(review.commits, commitHash);
+    if (reopened) {
+      await this.prisma.reviewCommit.update({
+        where: { id: reopened.id },
+        data: { status: ReviewCommitStatus.IN_REVIEW },
+      });
     }
 
     await this.refreshFromComments(review.id, user.id);
