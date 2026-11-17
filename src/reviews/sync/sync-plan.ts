@@ -1,7 +1,4 @@
-import {
-  ReviewCommitChangeKind,
-  ReviewCommitStatus,
-} from "@prisma/client";
+import { ReviewCommitChangeKind } from "@prisma/client";
 import type { GitCommitMetadata } from "../git/git-remote";
 import { rawMessageFromGitMetadata } from "../gitweb/gitweb-metadata";
 import type { ReviewCommitWithAcks } from "../review-queries";
@@ -31,7 +28,7 @@ export type RemainingCommits = Map<string, ReviewCommitWithAcks>;
 
 /**
  * Identical patch-id means the diff is unchanged. Only a commit whose message
- * did not move either is a pure rebase, keeping its status and its acks; a
+ * did not move either is a pure rebase, keeping its status; a
  * rewritten commit log is a change the reviewers have to look at again.
  */
 export function matchRebasedCommits(
@@ -144,19 +141,6 @@ export function syncedReviewText(plan: SyncPlan, currentTitle: string | null) {
       : log;
 
   return { title, log, description };
-}
-
-/** Reviewer acks survive only when every commit comes back acked as is. */
-export function allCommitsStayAcked(plan: SyncPlan): boolean {
-  return (
-    plan.dropped.length === 0 &&
-    plan.entries.every(
-      (entry) =>
-        (entry.changeKind === ReviewCommitChangeKind.UNCHANGED ||
-          entry.changeKind === ReviewCommitChangeKind.REBASED) &&
-        entry.previous?.status === ReviewCommitStatus.ACKED,
-    )
-  );
 }
 
 /** Entries whose commit changed content and has a previous version. */

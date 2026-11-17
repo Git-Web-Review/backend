@@ -7,7 +7,6 @@ import { commitCreateFromGitMetadata } from "../gitweb/gitweb-metadata";
 import type { ReviewWithRelations } from "../review-queries";
 import { truncate } from "../review-text";
 import {
-  allCommitsStayAcked,
   modifiedEntries,
   needsNewReview,
   syncedReviewText,
@@ -40,14 +39,8 @@ export async function applySyncPlan(
   await writePlanEntries(tx, reviewId, plan.entries);
   await restoreRehashedComments(tx, reviewId, rehashedEntries);
   await applyCommentRemaps(tx, commentRemaps, actorId);
-  await resetChangedCommits(tx, plan);
-
-  if (!allCommitsStayAcked(plan)) {
-    await tx.reviewReviewer.updateMany({
-      where: { reviewId },
-      data: { acknowledgedAt: null },
-    });
-  }
+  await removeAcks(tx, reviewId);
+  await resetModifiedFileViews(tx, plan);
 
   const text = syncedReviewText(plan, review.title);
   await tx.review.update({
@@ -178,31 +171,25 @@ async function applyCommentRemaps(
   }
 }
 
-/**
- * A commit up for review again loses its acks. The files marked as viewed
- * only go with a changed diff: a rewritten log leaves them all as they were.
- */
-async function resetChangedCommits(
+/** A new version has to be acked again, whatever changed. */
+async function removeAcks(
+  tx: Prisma.TransactionClient,
+  reviewId: string,
+): Promise<void> {
+  await tx.reviewCommitAck.deleteMany({
+    where: { reviewCommit: { reviewId } },
+  });
+  await tx.reviewReviewer.updateMany({
+    where: { reviewId },
+    data: { acknowledgedAt: null },
+  });
+}
+
+/** Files marked as viewed only go with a changed diff. */
+async function resetModifiedFileViews(
   tx: Prisma.TransactionClient,
   plan: SyncPlan,
 ): Promise<void> {
-  const changed = plan.entries.filter(
-    (entry) => entry.previous && needsNewReview(entry),
-  );
-
-  const changedWithAcks = changed.filter(
-    (entry) => entry.previous!.acks.length > 0,
-  );
-  if (changedWithAcks.length) {
-    await tx.reviewCommitAck.deleteMany({
-      where: {
-        reviewCommitId: {
-          in: changedWithAcks.map((entry) => entry.previous!.id),
-        },
-      },
-    });
-  }
-
   const modifiedCommitIds = modifiedEntries(plan).map(
     (entry) => entry.previous!.id,
   );
