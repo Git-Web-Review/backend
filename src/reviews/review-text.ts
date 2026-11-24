@@ -49,3 +49,26 @@ export function reviewTitleFromCommits(
 
   return commitTitles[0] ?? null;
 }
+
+/**
+ * Title of a review after a sync: a title edited by hand (not the one derived
+ * from the previous branch and commits) is kept.
+ */
+export function syncedReviewTitle(
+  current: {
+    title: string | null;
+    sourceBranch: string | null;
+    commitTitles: string[];
+  },
+  branch: string,
+  commitTitles: string[],
+): string | null {
+  const generated = reviewTitleFromCommits(
+    current.sourceBranch,
+    current.commitTitles,
+  );
+  if (current.title && current.title !== generated) {
+    return current.title;
+  }
+  return reviewTitleFromCommits(branch, commitTitles) ?? current.title;
+}

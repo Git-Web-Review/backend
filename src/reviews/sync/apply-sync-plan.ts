@@ -42,7 +42,7 @@ export async function applySyncPlan(
   await removeAcks(tx, reviewId);
   await resetModifiedFileViews(tx, plan);
 
-  const text = syncedReviewText(plan, review.title);
+  const text = syncedReviewText(plan, review);
   await tx.review.update({
     where: { id: reviewId },
     data: {

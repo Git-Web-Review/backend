@@ -2,7 +2,7 @@ import { ReviewCommitChangeKind } from "@prisma/client";
 import type { GitCommitMetadata } from "../git/git-remote";
 import { rawMessageFromGitMetadata } from "../gitweb/gitweb-metadata";
 import type { ReviewCommitWithAcks } from "../review-queries";
-import { reviewTitleFromCommits, truncate } from "../review-text";
+import { syncedReviewTitle, truncate } from "../review-text";
 
 export type SyncPlanEntry = {
   hash: string;
@@ -122,12 +122,23 @@ export function planHasChanges(
 }
 
 /** Title, log and description of the review once the plan is applied. */
-export function syncedReviewText(plan: SyncPlan, currentTitle: string | null) {
-  const title =
-    reviewTitleFromCommits(
-      plan.branch,
-      [...plan.entries].reverse().map((entry) => entry.title),
-    ) ?? currentTitle;
+export function syncedReviewText(
+  plan: SyncPlan,
+  current: {
+    title: string | null;
+    sourceBranch: string | null;
+    commits: { title: string }[];
+  },
+) {
+  const title = syncedReviewTitle(
+    {
+      title: current.title,
+      sourceBranch: current.sourceBranch,
+      commitTitles: [...current.commits].reverse().map((c) => c.title),
+    },
+    plan.branch,
+    [...plan.entries].reverse().map((entry) => entry.title),
+  );
   const log = truncate(
     plan.entries
       .map((entry) => entry.title)
