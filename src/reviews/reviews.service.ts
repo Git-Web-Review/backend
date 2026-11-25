@@ -382,6 +382,10 @@ export class ReviewsService {
     assertCanManage(user, existingReview);
 
     await this.prisma.review.delete({ where: { id: reviewId } });
+    await this.reviewNotifications.publishReviewUpdated(
+      existingReview,
+      user.id,
+    );
 
     return { id: reviewId, deleted: true };
   }

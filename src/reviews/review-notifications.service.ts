@@ -302,6 +302,28 @@ export class ReviewNotificationsService {
     );
   }
 
+  /**
+   * The review changed without a notification (a comment deleted or edited,
+   * the review deleted): the pages of everyone who would hear about it reload.
+   */
+  async publishReviewUpdated(
+    review: ReviewWithRelations,
+    actorUserId: string,
+    threadAuthorIds: string[] = [],
+  ): Promise<void> {
+    const recipients = reviewRecipients({
+      ownerId: review.ownerId,
+      reviewerIds: review.reviewers.map((reviewer) => reviewer.userId),
+      threadAuthorIds,
+      actorId: actorUserId,
+    });
+    await this.notifications.publishRealtime(
+      [...recipients.keys()],
+      "REVIEW_UPDATED",
+      { reviewId: review.id },
+    );
+  }
+
   private ownerAndReviewers(
     review: ReviewWithRelations,
     actorUserId: string,

@@ -204,6 +204,7 @@ export class ReviewCommentsService {
     await this.prisma.reviewComment.delete({ where: { id: commentId } });
 
     await this.status.refreshFromComments(reviewId, user.id);
+    await this.reviewNotifications.publishReviewUpdated(review, user.id);
 
     return { id: commentId, deleted: true };
   }
@@ -235,6 +236,11 @@ export class ReviewCommentsService {
     }
 
     await this.status.refreshFromComments(reviewId, user.id);
+    await this.reviewNotifications.publishReviewUpdated(
+      review,
+      user.id,
+      comment.messages.map((item) => item.fromId),
+    );
 
     return { id: messageId, deleted: true };
   }
@@ -283,6 +289,11 @@ export class ReviewCommentsService {
       nextMessage,
       message.message,
       user.id,
+    );
+    await this.reviewNotifications.publishReviewUpdated(
+      review,
+      user.id,
+      updatedComment.messages.map((item) => item.fromId),
     );
 
     return this.responses.toCommentResponses([updatedComment]);

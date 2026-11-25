@@ -173,6 +173,27 @@ export class NotificationsService {
   }
 
   /**
+   * Pushes an event to the users' open pages only: nothing is stored and no
+   * relay (IRC, mail, webhook) sees it. Tells pages to reload what changed
+   * without a notification, such as a deleted comment.
+   */
+  async publishRealtime(
+    userIds: string[],
+    type: string,
+    payload: Prisma.InputJsonObject,
+  ): Promise<void> {
+    const event = { type, payload, createdAt: new Date().toISOString() };
+    await Promise.all(
+      userIds.map((userId) =>
+        this.redis.publish(
+          `${USER_NOTIFICATION_CHANNEL_PREFIX}:${userId}`,
+          event,
+        ),
+      ),
+    );
+  }
+
+  /**
    * Sends a made-up notification of this type to the user alone, over one
    * medium, rendered with the given format (empty for the default template).
    * Nothing is stored, and neither the in-app feed nor the webhook gets it.
