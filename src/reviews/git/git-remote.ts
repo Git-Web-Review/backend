@@ -83,14 +83,21 @@ export async function remoteDefaultBranch(remoteUrl: string): Promise<string> {
   }
 }
 
-/** Fetches the upstream a branch is compared to into `destination`. */
+/**
+ * Fetches the upstream a branch is compared to into `destination`; never the
+ * branch itself, which has nothing ahead of itself.
+ */
 export async function fetchUpstream(
   repoPath: string,
   remoteUrl: string,
   depth: number,
   destination: string,
+  branch?: string,
 ): Promise<boolean> {
-  for (const ref of UPSTREAM_REFS) {
+  const candidates = UPSTREAM_REFS.filter(
+    (ref) => ref !== `refs/heads/${branch}`,
+  );
+  for (const ref of candidates) {
     try {
       await runGit([
         "-C",
@@ -128,6 +135,7 @@ export async function fetchGitBranchCommitOptions(
     remoteUrl,
     BRANCH_HISTORY_DEPTH,
     "refs/gwr/origin",
+    branch,
   ))
     ? "refs/gwr/origin"
     : null;

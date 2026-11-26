@@ -67,3 +67,46 @@ test("a repository without master: HEAD branch and origin/HEAD upstream", (t) =>
 test("no symref in the ls-remote output: no default branch", () => {
   assert.equal(defaultBranchFromSymref("abc123\tHEAD\n"), null);
 });
+
+test("a repository without remote-tracking refs: compared to its own master", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "gwr-plain-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const remote = join(root, "remote");
+  const cache = join(root, "cache");
+  const commit = (message: string) =>
+    git(
+      remote,
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@t",
+      "commit",
+      "--allow-empty",
+      "-q",
+      "-m",
+      message,
+    );
+
+  execFileSync("git", ["init", "-q", "-b", "master", remote]);
+  commit("base");
+  git(remote, "checkout", "-q", "-b", "feature");
+  commit("ahead");
+  git(remote, "checkout", "-q", "master");
+  commit("master moved on");
+  execFileSync("git", ["init", "-q", "--bare", cache]);
+
+  git(cache, "fetch", "-q", remote, "+feature:refs/gwr/head");
+  const upstream = UPSTREAM_REFS.find((ref) => {
+    try {
+      git(cache, "fetch", "-q", remote, `+${ref}:refs/gwr/origin`);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  assert.equal(upstream, "refs/heads/master");
+  assert.equal(
+    git(cache, "log", "--format=%s", "refs/gwr/origin..refs/gwr/head"),
+    "ahead",
+  );
+});
