@@ -110,3 +110,55 @@ test("a repository without remote-tracking refs: compared to its own master", (t
     "ahead",
   );
 });
+
+test("a branch cut from another upstream branch than master: only its own commits", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "gwr-maintenance-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const remote = join(root, "remote");
+  const cache = join(root, "cache");
+  const commit = (message: string) =>
+    git(
+      remote,
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@t",
+      "commit",
+      "--allow-empty",
+      "-q",
+      "-m",
+      message,
+    );
+
+  execFileSync("git", ["init", "-q", "-b", "master", remote]);
+  commit("base");
+  git(remote, "update-ref", "refs/remotes/origin/master", "HEAD");
+  git(remote, "checkout", "-q", "-b", "feature");
+  commit("maintenance fix");
+  git(remote, "update-ref", "refs/remotes/origin/b_6wind", "HEAD");
+  commit("ahead");
+  execFileSync("git", ["init", "-q", "--bare", cache]);
+
+  git(cache, "fetch", "-q", remote, "+feature:refs/gwr/head");
+  git(cache, "fetch", "-q", remote, `+${UPSTREAM_REFS[0]}:refs/gwr/origin`);
+  git(
+    cache,
+    "fetch",
+    "-q",
+    "--prune",
+    remote,
+    "+refs/remotes/origin/*:refs/gwr/upstream/*",
+  );
+  assert.equal(
+    git(
+      cache,
+      "log",
+      "--format=%s",
+      "refs/gwr/head",
+      "--not",
+      "refs/gwr/origin",
+      "--glob=refs/gwr/upstream/*",
+    ),
+    "ahead",
+  );
+});

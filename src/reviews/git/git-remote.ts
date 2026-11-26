@@ -139,25 +139,34 @@ export async function fetchGitBranchCommitOptions(
   ))
     ? "refs/gwr/origin"
     : null;
+  const hasUpstream =
+    (await fetchRemoteTrackingRefs(repoPath, remoteUrl)) ||
+    upstreamRef !== null;
 
-  const branchLog = (range: string) =>
+  const branchLog = (...revisions: string[]) =>
     runGit([
       "-C",
       repoPath,
       "log",
       `--max-count=${BRANCH_HISTORY_DEPTH}`,
       "--format=%H%x00%an%x00%ae%x00%aI%x00%s%x00%b%x1e",
-      range,
+      ...revisions,
     ]);
 
+  // A branch is often cut from another upstream branch than master (a
+  // maintenance branch): only its own commits, those on no upstream branch,
+  // are to review.
   const ahead = parseBranchLog(
     await branchLog(
-      upstreamRef ? `${upstreamRef}..refs/gwr/head` : "refs/gwr/head",
+      "refs/gwr/head",
+      "--not",
+      ...(upstreamRef ? [upstreamRef] : []),
+      "--glob=refs/gwr/upstream/*",
     ),
   );
   if (
     ahead.options.length > 0 ||
-    !upstreamRef ||
+    !hasUpstream ||
     !(await isCompleteHistory(repoPath, "refs/gwr/head"))
   ) {
     return ahead;
@@ -167,6 +176,37 @@ export async function fetchGitBranchCommitOptions(
   // so nothing is ever ahead of origin/master. While the whole history still
   // fits in the fetch window, it is what there is to review.
   return parseBranchLog(await branchLog("refs/gwr/head"));
+}
+
+/**
+ * Fetches the remote's remote-tracking branches (the upstream branches of a
+ * developer repository) into refs/gwr/upstream/*.
+ */
+async function fetchRemoteTrackingRefs(
+  repoPath: string,
+  remoteUrl: string,
+): Promise<boolean> {
+  try {
+    await runGit([
+      "-C",
+      repoPath,
+      "fetch",
+      "--prune",
+      `--depth=${BRANCH_HISTORY_DEPTH}`,
+      remoteUrl,
+      "+refs/remotes/origin/*:refs/gwr/upstream/*",
+    ]);
+  } catch {
+    return false;
+  }
+  const refs = await runGit([
+    "-C",
+    repoPath,
+    "for-each-ref",
+    "--count=1",
+    "refs/gwr/upstream/",
+  ]);
+  return refs.trim() !== "";
 }
 
 /**
