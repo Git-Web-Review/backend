@@ -5,6 +5,7 @@ import { extractReviewerEmails } from "./commit-message";
 import { parseGitPatch } from "./git-diff";
 import { defaultBranchFromSymref, UPSTREAM_REFS } from "./remote-refs";
 import { ensureGitCache, gitPatchId, runGit, runGitPiped } from "./git-runner";
+import { runInRepo } from "./git-repo-lock";
 
 /** How far back a branch is fetched, and so how many commits it can list. */
 const BRANCH_HISTORY_DEPTH = 50;
@@ -33,41 +34,44 @@ export async function fetchGitCommitMetadata(
 ): Promise<GitCommitMetadata> {
   const repoPath = await ensureGitCache(remoteUrl);
 
-  await runGit(["-C", repoPath, "fetch", "--depth=2", remoteUrl, commitHash]);
+  // FETCH_HEAD is shared: hold the cache until it has been read.
+  return runInRepo(repoPath, async () => {
+    await runGit(["-C", repoPath, "fetch", "--depth=2", remoteUrl, commitHash]);
 
-  const commitOutput = await runGit([
-    "-C",
-    repoPath,
-    "show",
-    "-s",
-    "--format=%H%x00%an%x00%ae%x00%s%x00%b",
-    "FETCH_HEAD",
-  ]);
-  const [hash, authorName, authorEmail, title, body = ""] =
-    commitOutput.split("\0");
-  const patch = await runGit([
-    "-C",
-    repoPath,
-    "show",
-    "--format=",
-    "--full-index",
-    "--find-renames",
-    "--find-copies",
-    "--no-ext-diff",
-    "--no-color",
-    "FETCH_HEAD",
-  ]);
-  const message = [title.trim(), body.trim()].filter(Boolean).join("\n\n");
+    const commitOutput = await runGit([
+      "-C",
+      repoPath,
+      "show",
+      "-s",
+      "--format=%H%x00%an%x00%ae%x00%s%x00%b",
+      "FETCH_HEAD",
+    ]);
+    const [hash, authorName, authorEmail, title, body = ""] =
+      commitOutput.split("\0");
+    const patch = await runGit([
+      "-C",
+      repoPath,
+      "show",
+      "--format=",
+      "--full-index",
+      "--find-renames",
+      "--find-copies",
+      "--no-ext-diff",
+      "--no-color",
+      "FETCH_HEAD",
+    ]);
+    const message = [title.trim(), body.trim()].filter(Boolean).join("\n\n");
 
-  return {
-    hash: hash.trim(),
-    title: title.trim(),
-    body,
-    message,
-    authorName: authorName.trim(),
-    authorEmail: authorEmail.trim(),
-    gitDiff: { files: parseGitPatch(patch) },
-  };
+    return {
+      hash: hash.trim(),
+      title: title.trim(),
+      body,
+      message,
+      authorName: authorName.trim(),
+      authorEmail: authorEmail.trim(),
+      gitDiff: { files: parseGitPatch(patch) },
+    };
+  });
 }
 
 /**

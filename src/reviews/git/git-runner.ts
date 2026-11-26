@@ -9,6 +9,7 @@ import {
   GIT_HARDENING_ARGS,
   Semaphore,
 } from "./git-command";
+import { runInRepo } from "./git-repo-lock";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,7 +27,7 @@ const gitCacheDirectory =
   process.env.GIT_WEB_REVIEW_GIT_CACHE_DIR ?? "/tmp/git-web-review/repos";
 
 export function runGit(args: string[]): Promise<string> {
-  return gitConcurrency.run(async () => {
+  const run = () => gitConcurrency.run(async () => {
     const { stdout } = await execFileAsync(
       "git",
       [...GIT_HARDENING_ARGS, ...args],
@@ -40,6 +41,8 @@ export function runGit(args: string[]): Promise<string> {
 
     return stdout;
   });
+
+  return args[0] === "-C" ? runInRepo(args[1], run) : run();
 }
 
 export function runGitPiped(
@@ -47,7 +50,7 @@ export function runGitPiped(
   secondArgs: string[],
   stdin: string,
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
+  const run = () => new Promise<string>((resolve, reject) => {
     const env = gitEnvironment();
     const first = spawn("git", [...GIT_HARDENING_ARGS, ...firstArgs], { env });
     const second = spawn("git", [...GIT_HARDENING_ARGS, ...secondArgs], { env });
@@ -74,6 +77,8 @@ export function runGitPiped(
     });
     first.stdin.end(stdin);
   });
+
+  return firstArgs[0] === "-C" ? runInRepo(firstArgs[1], run) : run();
 }
 
 export function gitPatchId(patch: string): Promise<string | null> {
